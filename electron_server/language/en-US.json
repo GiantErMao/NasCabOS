@@ -260,6 +260,8 @@
       "TMDB_PROXY_TEST_FAILED": "Proxy test failed. TMDB is unreachable via this proxy",
       "TMDB_PROXY_TEST_FAILED_DETAIL": "Proxy test failed: %s",
       "TMDB_CONFIG_SAVED": "TMDB settings saved",
+      "METATUBE_TEST_FAILED": "MetaTube service test failed",
+      "METATUBE_TEST_FAILED_DETAIL": "MetaTube service test failed: %s",
       "TRANSCODE_CONFIG_SAVED": "Transcode temp directory saved",
       "SUBTITLE_CONFIG_SAVED": "Subtitle settings saved",
       "TRANSCODE_TEMP_DIR_NOT_EXIST": "Transcode temp directory does not exist",

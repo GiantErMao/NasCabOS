@@ -6,6 +6,7 @@ const tableConfig = require('../../../../db/table/tableConfig');
 const nascabAccountUtil = require('../../service/utils/nascabAccountUtil');
 const config = require('../../../../config/config');
 const { TmdbClient } = require('../../../../workers/videoIndex/nfoFetchWorker/tmdbClient');
+const { MetaTubeClient, DEFAULT_METATUBE_BASE_URL, normalizeMetaTubeBaseUrl, parseMetaTubeScrapeId, buildMetaTubeScrapeId } = require('../../../../workers/videoIndex/nfoFetchWorker/metatubeClient');
 
 function _normalizeToTmdbLanguage(locale) {
   const raw = String(locale || '').trim();
@@ -42,6 +43,8 @@ function _getSystemLocale() {
 
 let _tmdbClientPromise = null;
 let _tmdbClientConfigKey = '';
+let _metatubeClientPromise = null;
+let _metatubeClientConfigKey = '';
 
 async function _getTmdbClient() {
   const knex = knexUtil.getInstance(dbUtil.DB_PATHS.MAIN_DB);
@@ -76,6 +79,38 @@ async function _getTmdbClient() {
   _tmdbClientConfigKey = key;
   _tmdbClientPromise = Promise.resolve(new TmdbClient({ apiUrl, apiToken, proxyUrl, language: effectiveLanguage }));
   return await _tmdbClientPromise;
+}
+
+async function _getScrapeSource() {
+  const raw = await tableConfig.getConfigByKey('videoScrapeSource').catch(() => '');
+  return String(raw || '').trim() === 'metatube' ? 'metatube' : 'tmdb';
+}
+
+async function _getMetaTubeConfig() {
+  const [baseUrlRaw, tokenRaw, providerRaw, fallbackRaw] = await Promise.all([
+    tableConfig.getConfigByKey('metatubeBaseUrl'),
+    tableConfig.getConfigByKey('metatubeToken'),
+    tableConfig.getConfigByKey('metatubeProvider'),
+    tableConfig.getConfigByKey('metatubeFallback'),
+  ]);
+  return {
+    baseUrl: normalizeMetaTubeBaseUrl(baseUrlRaw) || normalizeMetaTubeBaseUrl(DEFAULT_METATUBE_BASE_URL),
+    token: tokenRaw ? String(tokenRaw).trim() : '',
+    provider: providerRaw ? String(providerRaw).trim() : '',
+    fallback: !(fallbackRaw === '0' || fallbackRaw === 0 || fallbackRaw === false),
+  };
+}
+
+async function _getMetaTubeClient() {
+  const cfg = await _getMetaTubeConfig();
+  if (!cfg.baseUrl) return null;
+  const key = `${cfg.baseUrl}||${cfg.token}`;
+  if (_metatubeClientPromise && _metatubeClientConfigKey === key) {
+    return { client: await _metatubeClientPromise, config: cfg };
+  }
+  _metatubeClientConfigKey = key;
+  _metatubeClientPromise = Promise.resolve(new MetaTubeClient({ baseUrl: cfg.baseUrl, token: cfg.token }));
+  return { client: await _metatubeClientPromise, config: cfg };
 }
 
 function _pickYearFromDate(dateStr) {
@@ -161,6 +196,28 @@ function _mapTvResult(tmdb, r) {
   };
 }
 
+function _mapMetaTubeMovieResult(r) {
+  const provider = r && r.provider ? String(r.provider).trim() : '';
+  const id = r && r.id ? String(r.id).trim() : '';
+  const title = r && r.title ? String(r.title).trim() : '';
+  const number = r && r.number ? String(r.number).trim() : '';
+  const actors = Array.isArray(r && r.actors) ? r.actors.map(v => String(v || '').trim()).filter(Boolean) : [];
+  const genres = Array.isArray(r && r.genres) ? r.genres.map(v => String(v || '').trim()).filter(Boolean) : [];
+  return {
+    id: buildMetaTubeScrapeId(provider, id) || id,
+    media_type: 'movie',
+    title: title || number || id,
+    original_title: number,
+    overview: r && r.summary ? String(r.summary).trim() : '',
+    year: _pickYearFromDate(r && r.release_date ? r.release_date : ''),
+    poster_url: r && (r.cover_url || r.big_cover_url || r.thumb_url || r.big_thumb_url) ? String(r.cover_url || r.big_cover_url || r.thumb_url || r.big_thumb_url).trim() : '',
+    backdrop_url: r && (r.big_thumb_url || r.thumb_url) ? String(r.big_thumb_url || r.thumb_url).trim() : '',
+    vote_average: r && r.score ? Number(r.score) : 0,
+    actors,
+    genres,
+  };
+}
+
 async function _enrichResults(tmdb, mediaType, results) {
   const list = Array.isArray(results) ? results : [];
   if (!tmdb || (mediaType !== 'movie' && mediaType !== 'tv') || list.length === 0) return list;
@@ -204,6 +261,32 @@ class VideoTmdbController {
 
       if (mediaType !== 'movie' && mediaType !== 'tv') {
         return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
+      }
+
+      const scrapeSource = await _getScrapeSource();
+      if (scrapeSource === 'metatube' && mediaType === 'movie') {
+        const meta = await _getMetaTubeClient();
+        if (!meta || !meta.client) return ResponseUtil.error(req, res, 'common.ERROR', 500);
+
+        if (searchMode === 'tmdb_id') {
+          const parsed = parseMetaTubeScrapeId(tmdbId);
+          const provider = parsed.provider || meta.config.provider;
+          if (!provider || !parsed.id) return ResponseUtil.success(req, res, { page: 1, total_pages: 0, results: [] }, 'common.SUCCESS', 200);
+          const details = await meta.client.getMovieDetails(provider, parsed.id).catch(() => null);
+          if (!details) return ResponseUtil.success(req, res, { page: 1, total_pages: 0, results: [] }, 'common.SUCCESS', 200);
+          const item = _mapMetaTubeMovieResult(details);
+          return ResponseUtil.success(req, res, { page: 1, total_pages: 1, results: [item].filter(e => e && e.id) }, 'common.SUCCESS', 200);
+        }
+
+        if (!query) return ResponseUtil.success(req, res, { page: 1, total_pages: 0, results: [] }, 'common.SUCCESS', 200);
+        const raw = await meta.client.searchMovie({
+          query,
+          provider: meta.config.provider,
+          fallback: meta.config.fallback,
+        });
+        const list = Array.isArray(raw) ? raw : [];
+        const results = list.map(_mapMetaTubeMovieResult).filter(e => e && e.id);
+        return ResponseUtil.success(req, res, { page: 1, total_pages: results.length > 0 ? 1 : 0, results }, 'common.SUCCESS', 200);
       }
 
       const tmdb = await _getTmdbClient();

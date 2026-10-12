@@ -6,6 +6,7 @@ const tableFileLog = require('../../../../db/table/tableFileLog');
 const { hasPermission } = require('../../../../utils/permissionUtil');
 const FileUtil = require('../../../../utils/fileUtil');
 const userUtil = require('../../../../utils/userUtil');
+const { selectNaturalPageIdsFromQuery, sortRowsByPageIds } = require('../../../../utils/naturalSortUtil');
 const { applyPathPrefixFilter } = require('./photoPathQueryUtil');
 
 function createTrashOps({ getKnex, getValidPaths, indexFields }) {
@@ -75,9 +76,8 @@ function createTrashOps({ getKnex, getValidPaths, indexFields }) {
       }
     }
 
-    const sortField = params.sortField || 'in_trash_time';
+    const sortField = params.sortField === 'filename' ? 'filename' : 'in_trash_time';
     const sortOrder = params.sortOrder === 'asc' ? 'asc' : 'desc';
-    query.orderBy(`photo_index.${sortField}`, sortOrder);
 
     const page = params.page || 1;
     const pageSize = params.pageSize || 20;
@@ -88,9 +88,35 @@ function createTrashOps({ getKnex, getValidPaths, indexFields }) {
 
     const selectFields = indexFields.map(f => `photo_index.${f}`);
     query.select([...selectFields, 'photo_index.in_trash_time']);
-    query.limit(pageSize).offset(offset);
 
-    const list = await query;
+    let naturalPageIds = null;
+    if (sortField === 'filename') {
+      const candidateQuery = query
+        .clone()
+        .clearSelect()
+        .clearOrder()
+        .distinct('photo_index.id', 'photo_index.filename');
+      naturalPageIds = await selectNaturalPageIdsFromQuery(candidateQuery, {
+        sortOrder,
+        offset,
+        limit: pageSize,
+        valueFields: ['filename'],
+      });
+      if (naturalPageIds.length === 0) {
+        query.whereRaw('1 = 0');
+      } else {
+        query.whereIn('photo_index.id', naturalPageIds);
+      }
+    } else {
+      query.orderBy(`photo_index.${sortField}`, sortOrder);
+      query.orderBy('photo_index.id', 'desc');
+      query.limit(pageSize).offset(offset);
+    }
+
+    let list = await query;
+    if (naturalPageIds !== null && list.length > 1) {
+      list = sortRowsByPageIds(list, naturalPageIds);
+    }
     const result = list.map(item => ({
       ...item,
       fullpath: path.join(item.path, item.filename),

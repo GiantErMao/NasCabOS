@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, protected;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
@@ -31,10 +31,13 @@ abstract class BaseApiService {
   // ── 网络异常弹窗（全局去重） ──
   /// 连续请求失败计数
   static int _consecutiveFailCount = 0;
+
   /// 失败计数达此阈值时弹出提示
   static const int _failCountDialogThreshold = 2;
+
   /// 网络异常对话框是否正在显示
   static bool _networkIssueDialogShowing = false;
+
   /// 用于取消已显示的对话框（当请求恢复时）
   static Completer<void>? _networkIssueDialogDismissCompleter;
 
@@ -220,7 +223,18 @@ abstract class BaseApiService {
 
   /// 处理API错误
   String handleApiError(dynamic error) {
-    return '网络请求异常: ${error.message}';
+    return '网络请求异常: $error';
+  }
+
+  @protected
+  Future<bool> recoverConnectionAfterRequestError({
+    required Object error,
+    required String endpoint,
+  }) {
+    return apiController.maybeFailoverOnRequestError(
+      error: error,
+      endpoint: endpoint,
+    );
   }
 
   /// 带重试机制的API请求封装
@@ -245,12 +259,13 @@ abstract class BaseApiService {
     }
     int attempt = 0;
     bool twofaRetried = false;
+    bool failoverReplayUsed = false;
     final maxAttempts = (maxRetries ?? defaultMaxRetries) + 1;
     Exception? lastError;
     while (attempt < maxAttempts) {
       try {
         // 发送HTTP请求
-        final response = await _sendRequest(
+        final response = await sendApiRequest(
           method,
           endpoint,
           body: body,
@@ -276,7 +291,7 @@ abstract class BaseApiService {
             }
             final nextBody = await _attachTwofaCode(body, twofaCode);
             twofaRetried = true;
-            final retryResponse = await _sendRequest(
+            final retryResponse = await sendApiRequest(
               method,
               endpoint,
               body: nextBody,
@@ -294,19 +309,28 @@ abstract class BaseApiService {
           }
         }
         // 处理HTTP响应
-        final result = _handleHttpResponse<T>(
-          response,
-          dataParser: dataParser,
-        );
+        final result = _handleHttpResponse<T>(response, dataParser: dataParser);
         _onRequestSucceeded();
         return result;
       } catch (error) {
         print('请求失败，尝试次数: $attempt, 错误: $error');
         lastError = error is Exception ? error : Exception(error.toString());
+
+        final switched = await recoverConnectionAfterRequestError(
+          error: error,
+          endpoint: endpoint,
+        ).catchError((_) => false);
+        final isGet = method.toUpperCase() == 'GET';
+        if (isGet && switched && !failoverReplayUsed) {
+          failoverReplayUsed = true;
+          print('连接通道已切换，重放一次 GET 请求: $endpoint');
+          continue;
+        }
+
         attempt++;
 
-        // 如果是最后一次尝试，返回错误并累计失败计数
-        if (attempt >= maxAttempts) {
+        // 非幂等请求可能已在服务端执行，只恢复后续请求的通道，不自动重放。
+        if (!isGet || attempt >= maxAttempts) {
           if (showNetworkIssueOnFailure) {
             _onRequestFailed();
           }
@@ -329,7 +353,8 @@ abstract class BaseApiService {
 
   /// 发送HTTP请求
   /// [cancelFuture] 若在请求完成前 complete，会取消 P2P 请求并通知后端
-  Future<http.Response> _sendRequest(
+  @protected
+  Future<http.Response> sendApiRequest(
     String method,
     String endpoint, {
     dynamic body,
@@ -603,7 +628,7 @@ abstract class BaseApiService {
     Map<String, String>? queryParams,
     Duration? timeout,
   }) {
-    return _sendRequest(
+    return sendApiRequest(
       method,
       endpoint,
       body: body,
@@ -705,8 +730,10 @@ class ApiResponse<T> {
   final bool success;
   final T? data;
   final String? message;
+
   /// HTTP 状态码（来自 [http.Response.statusCode]）。
   final int? code;
+
   /// 响应体中的业务错误键（[ResponseUtil.error] 的 `code` 字段），成功时一般为 null。
   final String? apiErrorKey;
   final dynamic rawResponse;

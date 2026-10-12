@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:path/path.dart' as p;
 import '../../../base/components/custom_extended_image.dart';
 import '../../../base/components/custom_no_data.dart';
 import '../../base/beans/video_item_bean.dart';
+import '../../base/video_utils/video_item_utils.dart';
 import '../../../../core/api/api_controller.dart';
 import '../../../../utils/dialog_util.dart';
 import '../../../../utils/toast_util.dart';
@@ -15,14 +17,18 @@ class VideoSearchMediaDialog {
     required VideoHomeItemBean item,
   }) {
     final defaultMediaType =
-            item.mediaType.toLowerCase() == 'movie' ||
+        item.mediaType.toLowerCase() == 'movie' ||
             item.mediaType.toLowerCase() == 'bdmv' ||
             item.mediaType.toLowerCase() == 'video_ts'
         ? 'movie'
         : 'tv';
-    final defaultQuery = item.nfoName.trim().isNotEmpty
-        ? item.nfoName.trim()
-        : item.filename;
+    final videoCode = extractVideoCodeFromFilename(item.filename);
+    final filenameWithoutExtension = p
+        .basenameWithoutExtension(item.filename)
+        .trim();
+    final defaultQuery = videoCode.isNotEmpty
+        ? videoCode
+        : filenameWithoutExtension;
 
     return showDialog<void>(
       context: context,
@@ -65,6 +71,7 @@ class _VideoSearchMediaDialogContentState
   int _totalPages = 0;
   bool _loading = false;
   List<VideoTmdbSearchItem> _results = const [];
+  String _searchError = '';
 
   int _searchToken = 0;
 
@@ -84,11 +91,11 @@ class _VideoSearchMediaDialogContentState
   }
 
   Future<void> _applyResult(VideoTmdbSearchItem r) async {
-    if (widget.item.id <= 0 || r.id <= 0) return;
+    if (widget.item.id <= 0 || r.id.trim().isEmpty) return;
     try {
       final resp = await VideoScrapeApiService.instance.startScrape(
         indexId: widget.item.id,
-        tmdbId: r.id,
+        scrapeId: r.id,
         mode: 'manual',
         showLoading: false,
       );
@@ -119,6 +126,7 @@ class _VideoSearchMediaDialogContentState
     final token = ++_searchToken;
     setState(() {
       _loading = true;
+      _searchError = '';
     });
     try {
       final p = overridePage ?? _page;
@@ -137,12 +145,14 @@ class _VideoSearchMediaDialogContentState
         _page = res.page;
         _totalPages = res.totalPages;
         _results = res.results;
+        _searchError = res.errorMessage;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted || token != _searchToken) return;
       setState(() {
         _loading = false;
+        _searchError = e.toString();
       });
     }
   }
@@ -236,7 +246,7 @@ class _VideoSearchMediaDialogContentState
     final title = r.title.isNotEmpty ? r.title : r.originalTitle;
     final subtitleParts = <String>[
       if (r.year > 0) r.year.toString(),
-      if (r.id > 0) 'TMDB ${r.id}',
+      if (r.id.trim().isNotEmpty) 'ID ${r.id}',
     ];
     final subtitle = subtitleParts.join(' · ');
     final posterUrl = r.posterUrl.isNotEmpty
@@ -447,7 +457,11 @@ class _VideoSearchMediaDialogContentState
                                   ),
                                 ),
                               )
-                            : CustomNoData(text: 'video_tmdb_no_results'.tr),
+                            : CustomNoData(
+                                text: _searchError.isNotEmpty
+                                    ? _searchError
+                                    : 'video_tmdb_no_results'.tr,
+                              ),
                       )
                     : ListView.builder(
                         shrinkWrap: true,

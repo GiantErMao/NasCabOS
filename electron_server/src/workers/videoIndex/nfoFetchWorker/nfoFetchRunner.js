@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const sharp = require('../../../utils/sharpConfigured');
 
 const Logger = require('../../../utils/logger');
@@ -14,6 +15,8 @@ const config = require('../../../config/config');
 const nascabAccountUtil = require('../../../api/modules/service/utils/nascabAccountUtil');
 
 const { TmdbClient } = require('./tmdbClient');
+const { MetaTubeClient, DEFAULT_METATUBE_BASE_URL, normalizeMetaTubeBaseUrl, parseMetaTubeScrapeId, buildMetaTubeScrapeId } = require('./metatubeClient');
+const { MetadataTranslateClient, normalizeTranslateApiUrl, normalizeTranslateTargetLanguage } = require('./metadataTranslateClient');
 const { buildMovieNfo, buildTvShowNfo, buildSeasonNfo, buildEpisodeNfo, writeTextIfChanged } = require('./jellyfinNfo');
 const videoIndexIndexUtil = require('../videoIndexIndexUtil');
 const { readAndParseNfo, hasValidNfo } = require('../nfoParser');
@@ -37,6 +40,67 @@ function _normalizeSearchTitleFromFileName(filename) {
   const base = path.parse(String(filename || '')).name;
   const norm = normalizeNameForNfoGuess(base);
   return norm || base;
+}
+
+function _extractMetaTubeNumberQueryFromFilename(filename) {
+  const base = path.parse(String(filename || '')).name;
+  return _extractMetaTubeNumberQueryFromText(base);
+}
+
+function _extractMetaTubeNumberQueryFromText(text) {
+  const base = String(text || '').trim();
+  if (!base) return '';
+
+  const patterns = [
+    /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/ig,
+    /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/ig,
+    /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/ig,
+    /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?=$|[^0-9a-z])/ig,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of base.matchAll(pattern)) {
+      const code = _normalizeMetaTubeNumberQuery(match && match[2] ? match[2] : '');
+      if (_isLikelyMetaTubeNumber(code)) return code;
+    }
+  }
+
+  return '';
+}
+
+function _normalizeMetaTubeNumberQuery(value) {
+  const raw = String(value || '').trim();
+  const reverse1Pondo = raw.match(/^(\d{6}[-_]\d{2,4})[-_\s]?1pon(?:do)?$/i);
+  if (reverse1Pondo) return `1PONDO-${reverse1Pondo[1]}`;
+  return raw
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .toUpperCase();
+}
+
+function _normalizeComparableMetaTubeNumber(value) {
+  return _normalizeMetaTubeNumberQuery(value).replace(/[^A-Z0-9]/g, '');
+}
+
+function _isLikelyMetaTubeNumber(code) {
+  const s = String(code || '').trim();
+  if (!s) return false;
+
+  const parts = s.split(/[-_]/);
+  if (parts.length < 2) return false;
+
+  const prefix = String(parts[0] || '').toLowerCase();
+  const lastNumber = Number(parts[parts.length - 1] || 0) || 0;
+  if (!lastNumber) return false;
+
+  const denyPrefixes = new Set(['bd', 'bluray', 'dvd', 'hdr', 'remux', 'uhd', 'web', 'webrip']);
+  if (denyPrefixes.has(prefix)) return false;
+
+  const resolutionNumbers = new Set([480, 540, 720, 1080, 1440, 2160, 4320]);
+  if (resolutionNumbers.has(lastNumber)) return false;
+
+  return true;
 }
 
 const _SKIP_NAME_HINTS = ['img_', 'video_', 'vid_', 'samsung_', 'short_', 'clip_', 'weixin_', 'wx_', 'dsc_', 'douyin_', 'xiaohongshu_', 'baiduyun_', 'mmexport'];
@@ -194,6 +258,50 @@ function _mapMovieToNfo({ client, movie }) {
   };
 }
 
+function _pickDateText(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  const m = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : '';
+}
+
+function _mapMetaTubeMovieToNfo(movie) {
+  const m = movie && typeof movie === 'object' ? movie : {};
+  const provider = m.provider ? String(m.provider).trim() : '';
+  const id = m.id ? String(m.id).trim() : '';
+  const number = m.number ? String(m.number).trim() : '';
+  const title = m.title ? String(m.title).trim() : '';
+  const releaseDate = _pickDateText(m.release_date);
+  const actors = _pickList(m.actors, a => {
+    const name = a ? String(a).trim() : '';
+    return name ? { name } : null;
+  }, 40);
+  const directors = _pickList([m.director], d => {
+    const name = d ? String(d).trim() : '';
+    return name ? { name } : null;
+  }, 1);
+  const tags = _pickList([number, provider, m.maker, m.label, m.series], v => (v ? String(v).trim() : ''), 0);
+  const genres = _pickList(m.genres, g => (g ? String(g).trim() : ''), 0);
+
+  return {
+    title: title || number || id,
+    originalTitle: number || '',
+    sortTitle: number || title || '',
+    year: _pickYearFromText(releaseDate),
+    premiered: releaseDate,
+    plot: m.summary || '',
+    rating: m.score ? Number(m.score) : 0,
+    genres,
+    tags,
+    countries: [],
+    languages: [],
+    tmdbId: buildMetaTubeScrapeId(provider, id) || id,
+    imdbId: '',
+    actors,
+    directors,
+  };
+}
+
 function _mapTvToNfo({ client, tv }) {
   const t = tv && typeof tv === 'object' ? tv : {};
   const { actors, directors } = _mapCreditsToPeople({ client, credits: t.credits });
@@ -256,6 +364,70 @@ function _mapEpisodeToNfo({ client, episode }) {
   };
 }
 
+async function _translateNfoData(translator, data, { translateTitle = false, translateGenres = true, translatePlot = true } = {}) {
+  if (!translator || !data || typeof data !== 'object') return data;
+  const out = { ...data };
+  try {
+    const changed = [];
+    if (translatePlot && out.plot) {
+      const before = String(out.plot || '').trim();
+      out.plot = await translator.translateText(out.plot);
+      if (String(out.plot || '').trim() !== before) changed.push('plot');
+    }
+    if (translateGenres && Array.isArray(out.genres) && out.genres.length > 0) {
+      const before = out.genres.map(v => String(v || '').trim()).filter(Boolean).join('\n');
+      out.genres = await translator.translateList(out.genres);
+      const after = out.genres.map(v => String(v || '').trim()).filter(Boolean).join('\n');
+      if (after !== before) changed.push('genres');
+    }
+    if (translateTitle && out.title) {
+      const before = String(out.title || '').trim();
+      out.title = await translator.translateText(out.title);
+      if (String(out.title || '').trim() !== before) changed.push('title');
+    }
+    if (changed.length > 0) {
+      Logger.info(`[nfoTranslate] translated fields: ${changed.join(',')}`);
+    } else if ((translatePlot && data.plot) || (translateGenres && Array.isArray(data.genres) && data.genres.length > 0) || (translateTitle && data.title)) {
+      Logger.warn('[nfoTranslate] enabled but translated text unchanged');
+    }
+  } catch (e) {
+    Logger.warn('[nfoTranslate] failed, keep original metadata', e && e.message ? e.message : e);
+  }
+  return out;
+}
+
+function _mergeMetaTubeMovie(searchItem, details) {
+  const base = searchItem && typeof searchItem === 'object' ? searchItem : {};
+  const detail = details && typeof details === 'object' ? details : {};
+  return {
+    ...base,
+    ...detail,
+    provider: detail.provider || base.provider,
+    id: detail.id || base.id,
+    number: detail.number || base.number,
+    title: detail.title || base.title,
+    summary: detail.summary || base.summary,
+    genres: Array.isArray(detail.genres) && detail.genres.length > 0 ? detail.genres : base.genres,
+    actors: Array.isArray(detail.actors) && detail.actors.length > 0 ? detail.actors : base.actors,
+    cover_url: detail.cover_url || base.cover_url,
+    big_cover_url: detail.big_cover_url || base.big_cover_url,
+    thumb_url: detail.thumb_url || base.thumb_url,
+    big_thumb_url: detail.big_thumb_url || base.big_thumb_url,
+  };
+}
+
+function _scoreMetaTubeMovie(movie) {
+  const m = movie && typeof movie === 'object' ? movie : {};
+  let score = 0;
+  if (String(m.title || '').trim()) score += 10;
+  if (String(m.number || '').trim()) score += 5;
+  if (String(m.summary || '').trim()) score += 1000 + Math.min(500, String(m.summary || '').trim().length);
+  if (Array.isArray(m.genres) && m.genres.length > 0) score += 200 + Math.min(50, m.genres.length * 5);
+  if (Array.isArray(m.actors) && m.actors.length > 0) score += 50;
+  if (m.cover_url || m.big_cover_url || m.thumb_url || m.big_thumb_url) score += 25;
+  return score;
+}
+
 function _pickLogoPathFromImages(images) {
   const logos = images && Array.isArray(images.logos) ? images.logos : [];
   if (!logos || logos.length === 0) return '';
@@ -263,9 +435,55 @@ function _pickLogoPathFromImages(images) {
   return pick && pick.file_path ? String(pick.file_path) : '';
 }
 
+const MAX_ARTWORK_FILENAME_BYTES = 180;
+
+function _utf8ByteLength(value) {
+  return Buffer.byteLength(String(value || ''), 'utf8');
+}
+
+function _hashText(value) {
+  return crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 10);
+}
+
+function _safeArtworkFileName(fileName) {
+  const raw = String(fileName || '').trim();
+  if (!raw) return '';
+  if (_utf8ByteLength(raw) <= MAX_ARTWORK_FILENAME_BYTES) return raw;
+
+  const ext = path.extname(raw) || '.jpg';
+  const base = path.basename(raw, ext);
+  const normalized = base.toLowerCase();
+  if (normalized.endsWith('-post') || normalized.endsWith('-poster')) return `poster${ext}`;
+  if (normalized.endsWith('-fanart')) return `fanart${ext}`;
+  if (normalized.endsWith('-logo')) return `logo${ext}`;
+
+  const hash = _hashText(raw);
+  const suffix = `-${hash}${ext}`;
+  let out = '';
+  for (const ch of base) {
+    const next = `${out}${ch}`;
+    if (_utf8ByteLength(`${next}${suffix}`) > MAX_ARTWORK_FILENAME_BYTES) break;
+    out = next;
+  }
+  return `${out || 'artwork'}${suffix}`;
+}
+
+function _resolveArtworkOutputPath(baseDir, fileName) {
+  const dir = String(baseDir || '').trim();
+  const safeName = _safeArtworkFileName(fileName);
+  if (!dir || !safeName) return '';
+  return path.join(dir, safeName);
+}
+
+function _resolveArtworkTempPath(baseDir, outPath, filePath) {
+  const dir = String(baseDir || '').trim() || path.dirname(String(outPath || ''));
+  const hash = _hashText(`${outPath || ''}|${filePath || ''}|${Date.now()}`);
+  return path.join(dir, `.nfo-img-${hash}`);
+}
+
 async function _ensureDownloaded(client, baseDir, fileName, filePath) {
   const fp = String(filePath || '').trim();
-  const out = path.join(String(baseDir || ''), String(fileName || ''));
+  const out = _resolveArtworkOutputPath(baseDir, fileName);
   if (!fp || !out) return false;
   try {
     if (fs.existsSync(out) && fs.statSync(out).isFile()) return false;
@@ -274,7 +492,7 @@ async function _ensureDownloaded(client, baseDir, fileName, filePath) {
   const url = client.buildImageUrl(fp);
   if (!url) return false;
 
-  const tmp = `${out}.${Date.now()}.tmp`;
+  const tmp = _resolveArtworkTempPath(baseDir, out, fp);
   const ok = await client.downloadToFile(url, tmp);
   if (!ok) return false;
   try {
@@ -292,7 +510,7 @@ async function _ensureDownloaded(client, baseDir, fileName, filePath) {
 
 async function _ensureDownloadedJpeg(client, baseDir, fileName, filePath) {
   const fp = String(filePath || '').trim();
-  const out = path.join(String(baseDir || ''), String(fileName || '')).trim();
+  const out = _resolveArtworkOutputPath(baseDir, fileName);
   if (!fp || !out) return false;
   try {
     if (fs.existsSync(out) && fs.statSync(out).isFile()) return false;
@@ -301,7 +519,7 @@ async function _ensureDownloadedJpeg(client, baseDir, fileName, filePath) {
   const url = client.buildImageUrl(fp);
   if (!url) return false;
 
-  const tmp = `${out}.${Date.now()}.tmp`;
+  const tmp = _resolveArtworkTempPath(baseDir, out, fp);
   const ok = await client.downloadToFile(url, tmp);
   if (!ok) return false;
   try {
@@ -319,7 +537,7 @@ async function _ensureDownloadedJpeg(client, baseDir, fileName, filePath) {
 
 async function _ensureDownloadedPng(client, baseDir, fileName, filePath) {
   const fp = String(filePath || '').trim();
-  const out = path.join(String(baseDir || ''), String(fileName || '')).trim();
+  const out = _resolveArtworkOutputPath(baseDir, fileName);
   if (!fp || !out) return false;
   try {
     if (fs.existsSync(out) && fs.statSync(out).isFile()) return false;
@@ -328,7 +546,7 @@ async function _ensureDownloadedPng(client, baseDir, fileName, filePath) {
   const url = client.buildImageUrl(fp);
   if (!url) return false;
 
-  const tmp = `${out}.${Date.now()}.tmp`;
+  const tmp = _resolveArtworkTempPath(baseDir, out, fp);
   const ok = await client.downloadToFile(url, tmp);
   if (!ok) return false;
   try {
@@ -381,6 +599,16 @@ class NfoFetchRunner {
   constructor() {
     this.knexVideo = null;
     this.tmdb = null;
+    this.metatube = null;
+    this.scrapeSource = 'tmdb';
+    this.metatubeProvider = '';
+    this.metatubeFallback = true;
+    this.nfoTranslateEnable = false;
+    this.nfoTranslateTitleEnable = false;
+    this.nfoTranslateTargetLanguage = 'zh-CN';
+    this.nfoTranslateApiUrl = '';
+    this.nfoTranslateApiKey = '';
+    this.metadataTranslator = null;
   }
 
   async init() {
@@ -389,7 +617,26 @@ class NfoFetchRunner {
     this.knexVideo = knexUtil.getInstance(dbUtil.DB_PATHS.VIDEO_DB);
 
     const knex = knexUtil.getInstance(dbUtil.DB_PATHS.MAIN_DB);
-    const [tmdbApiTokenDec, tmdbApiTokenDefaultDec, tmdbApiUrlDec, tmdbProxyEnable, tmdbProxyUrl, tmdbLanguage, uiLanguage] = await Promise.all([
+    const [
+      tmdbApiTokenDec,
+      tmdbApiTokenDefaultDec,
+      tmdbApiUrlDec,
+      tmdbProxyEnable,
+      tmdbProxyUrl,
+      tmdbLanguage,
+      uiLanguage,
+      scrapeSourceRaw,
+      metatubeBaseUrlRaw,
+      metatubeToken,
+      metatubeProvider,
+      metatubeFallbackRaw,
+      nfoTranslateEnableRaw,
+      nfoTranslateTitleEnableRaw,
+      nfoTranslateTargetLanguageRaw,
+      nfoTranslateApiUrlRaw,
+      nfoTranslateApiKeyStoredRaw,
+      nfoTranslateApiKeyRaw,
+    ] = await Promise.all([
       nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'tmdbApiToken'),
       nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'tmdbApiTokenDefault'),
       nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'tmdbApiUrl'),
@@ -397,6 +644,17 @@ class NfoFetchRunner {
       tableConfig.getConfigByKey('tmdbProxyUrl'),
       tableConfig.getConfigByKey('tmdbLanguage'),
       tableConfig.getConfigByKey(tableConfig.KEY_SERVER_UI_LANGUAGE),
+      tableConfig.getConfigByKey('videoScrapeSource'),
+      tableConfig.getConfigByKey('metatubeBaseUrl'),
+      tableConfig.getConfigByKey('metatubeToken'),
+      tableConfig.getConfigByKey('metatubeProvider'),
+      tableConfig.getConfigByKey('metatubeFallback'),
+      tableConfig.getConfigByKey('nfoTranslateEnable'),
+      tableConfig.getConfigByKey('nfoTranslateTitleEnable'),
+      tableConfig.getConfigByKey('nfoTranslateTargetLanguage'),
+      tableConfig.getConfigByKey('nfoTranslateApiUrl'),
+      tableConfig.getConfigByKey('nfoTranslateApiKey'),
+      nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'nfoTranslateApiKey'),
     ]);
     let apiToken = tmdbApiTokenDec ? String(tmdbApiTokenDec).trim() : '';
     if (!apiToken && tmdbApiTokenDefaultDec) apiToken = String(tmdbApiTokenDefaultDec).trim();
@@ -413,6 +671,35 @@ class NfoFetchRunner {
     }
 
     this.tmdb = new TmdbClient({ apiUrl, apiToken, proxyUrl, language: effectiveLanguage });
+    this.scrapeSource = String(scrapeSourceRaw || '').trim() === 'metatube' ? 'metatube' : 'tmdb';
+    this.metatubeProvider = metatubeProvider ? String(metatubeProvider).trim() : '';
+    this.metatubeFallback = !(metatubeFallbackRaw === '0' || metatubeFallbackRaw === 0 || metatubeFallbackRaw === false);
+    const metatubeBaseUrl = normalizeMetaTubeBaseUrl(metatubeBaseUrlRaw) || normalizeMetaTubeBaseUrl(DEFAULT_METATUBE_BASE_URL);
+    this.metatube = metatubeBaseUrl ? new MetaTubeClient({ baseUrl: metatubeBaseUrl, token: metatubeToken }) : null;
+    this.nfoTranslateEnable = nfoTranslateEnableRaw === '1' || nfoTranslateEnableRaw === 1 || nfoTranslateEnableRaw === true;
+    this.nfoTranslateTitleEnable = nfoTranslateTitleEnableRaw === '1' || nfoTranslateTitleEnableRaw === 1 || nfoTranslateTitleEnableRaw === true;
+    this.nfoTranslateTargetLanguage = normalizeTranslateTargetLanguage(nfoTranslateTargetLanguageRaw);
+    this.nfoTranslateApiUrl = normalizeTranslateApiUrl(nfoTranslateApiUrlRaw);
+    this.nfoTranslateApiKey = nfoTranslateApiKeyRaw
+      ? String(nfoTranslateApiKeyRaw).trim()
+      : nfoTranslateApiKeyStoredRaw && !String(nfoTranslateApiKeyStoredRaw).trim().startsWith('enc.')
+          ? String(nfoTranslateApiKeyStoredRaw).trim()
+          : '';
+    this.metadataTranslator = this.nfoTranslateEnable
+      ? new MetadataTranslateClient({
+          targetLanguage: this.nfoTranslateTargetLanguage,
+          apiUrl: this.nfoTranslateApiUrl,
+          apiKey: this.nfoTranslateApiKey,
+        })
+      : null;
+  }
+
+  async translateNfoData(nfoData) {
+    return await _translateNfoData(this.metadataTranslator, nfoData, {
+      translateTitle: this.nfoTranslateTitleEnable,
+      translateGenres: true,
+      translatePlot: true,
+    });
   }
 
   async getPendingRoots(limit = 5) {
@@ -456,6 +743,125 @@ class NfoFetchRunner {
       .catch(() => {});
   }
 
+  async _writeMetaTubeMovieRow(row, details) {
+    const dirPath = row && row.path ? String(row.path) : '';
+    const filename = row && row.filename ? String(row.filename) : '';
+    if (!dirPath || !filename || !details) return false;
+    const mediaType = row && row.media_type ? String(row.media_type).trim() : '';
+    const isDiscFolderMovie = mediaType === 'bdmv' || mediaType === 'video_ts';
+    const movieFolder = isDiscFolderMovie ? path.join(dirPath, filename) : '';
+
+    let nfoData = _mapMetaTubeMovieToNfo(details);
+    nfoData = await this.translateNfoData(nfoData);
+    const baseName = path.parse(filename).name;
+    const targetDir = isDiscFolderMovie ? movieFolder : dirPath;
+    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
+    await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
+
+    const posterUrl = details.cover_url || details.big_cover_url || details.thumb_url || details.big_thumb_url || '';
+    const fanartUrl = details.big_thumb_url || details.thumb_url || (Array.isArray(details.preview_images) ? details.preview_images[0] : '') || '';
+    if (posterUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'poster.jpg' : `${baseName}-post.jpg`, posterUrl);
+    if (fanartUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'fanart.jpg' : `${baseName}-fanart.jpg`, fanartUrl);
+
+    await _updateIndexFromNfoAndArtwork({
+      knex: this.knexVideo,
+      row,
+      baseDir: dirPath,
+      searchDir: targetDir,
+      nfoPath,
+      videoBaseName: isDiscFolderMovie ? '' : baseName,
+      onlyVideoBase: false,
+      seasonNumber: 0,
+    });
+
+    return true;
+  }
+
+  async _processMovieRowByMetaTube(row) {
+    if (!this.metatube) return false;
+    const dirPath = row && row.path ? String(row.path) : '';
+    const filename = row && row.filename ? String(row.filename) : '';
+    const preferTitle = (row && row.nfo_name ? String(row.nfo_name) : '').trim();
+    const numberQuery =
+      _extractMetaTubeNumberQueryFromFilename(filename) ||
+      _extractMetaTubeNumberQueryFromText(path.basename(dirPath));
+    const fallbackTitle = _normalizeSearchTitleFromFileName(filename);
+    const rawTitle = fallbackTitle || preferTitle;
+    const query = numberQuery || _cleanSearchText(rawTitle) || String(rawTitle || '').trim();
+    if (!query) return false;
+
+    const results = await this.metatube.searchMovie({
+      query,
+      provider: this.metatubeProvider,
+      fallback: this.metatubeFallback,
+    });
+    const picked = await this._pickMetaTubeMovieWithDetails(results, numberQuery);
+    return await this._writeMetaTubeMovieRow(row, picked);
+  }
+
+  async _processMovieRowByMetaTubeId(row, scrapeId) {
+    if (!this.metatube) return false;
+    const parsed = parseMetaTubeScrapeId(scrapeId);
+    const provider = parsed.provider || this.metatubeProvider;
+    const movieId = parsed.id;
+    if (!provider || !movieId) return false;
+    const details = await this.metatube.getMovieDetails(provider, movieId).catch(e => {
+      Logger.warn(`[nfoFetch] MetaTube detail failed: provider=${provider} id=${movieId}`, e && e.message ? e.message : e);
+      return null;
+    });
+    if (details) return await this._writeMetaTubeMovieRow(row, details);
+
+    const results = await this.metatube
+      .searchMovie({
+        query: movieId,
+        provider: '',
+        fallback: this.metatubeFallback,
+      })
+      .catch(() => []);
+    const candidates = (Array.isArray(results) ? results : []).filter(item => String(item && item.id ? item.id : '').trim() === movieId);
+    const picked = await this._pickMetaTubeMovieWithDetails(candidates.length > 0 ? candidates : results);
+    return await this._writeMetaTubeMovieRow(row, picked);
+  }
+
+  async _pickMetaTubeMovieWithDetails(results, expectedNumber = '') {
+    if (!this.metatube) return null;
+    const all = Array.isArray(results) ? results.filter(Boolean) : [];
+    const expectedKey = _normalizeComparableMetaTubeNumber(expectedNumber);
+    let candidates = all;
+    if (expectedKey) {
+      candidates = all.filter(item => _normalizeComparableMetaTubeNumber(item && item.number) === expectedKey);
+      if (candidates.length === 0) {
+        Logger.warn(`[nfoFetch] MetaTube exact number not found; refusing unrelated results: query=${expectedNumber}`);
+        return null;
+      }
+    }
+    const list = candidates.slice(0, 5);
+    if (list.length === 0) return null;
+
+    let best = null;
+    let bestScore = -1;
+    for (const item of list) {
+      const provider = item && item.provider ? String(item.provider).trim() : this.metatubeProvider;
+      const movieId = item && item.id ? String(item.id).trim() : '';
+      if (!provider || !movieId) continue;
+
+      const details = await this.metatube.getMovieDetails(provider, movieId).catch(e => {
+        Logger.warn(`[nfoFetch] MetaTube detail failed: provider=${provider} id=${movieId}`, e && e.message ? e.message : e);
+        return null;
+      });
+      const merged = _mergeMetaTubeMovie(item, details);
+      const score = _scoreMetaTubeMovie(merged);
+      if (score > bestScore) {
+        best = merged;
+        bestScore = score;
+      }
+      if (String(merged.summary || '').trim() && Array.isArray(merged.genres) && merged.genres.length > 0) {
+        break;
+      }
+    }
+    return best;
+  }
+
   async processMovieRow(row) {
     const dirPath = row && row.path ? String(row.path) : '';
     const filename = row && row.filename ? String(row.filename) : '';
@@ -486,6 +892,10 @@ class NfoFetchRunner {
       return false;
     }
 
+    if (this.scrapeSource === 'metatube') {
+      return await this._processMovieRowByMetaTube(row);
+    }
+
     const yearFromFilename = _pickYearFromText(filename);
     const attempts = _buildQueryAttemptsFromText(rawTitle);
     if (attempts.length === 0) {
@@ -511,7 +921,8 @@ class NfoFetchRunner {
     const details = await this.tmdb.getMovieDetails(tmdbId);
     if (!details) return false;
 
-    const nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
+    let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
+    nfoData = await this.translateNfoData(nfoData);
     const baseName = path.parse(filename).name;
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
@@ -717,7 +1128,8 @@ class NfoFetchRunner {
     const details = await this.tmdb.getTvDetails(tmdbId);
     if (!details) return false;
 
-    const nfoData = _mapTvToNfo({ client: this.tmdb, tv: details });
+    let nfoData = _mapTvToNfo({ client: this.tmdb, tv: details });
+    nfoData = await this.translateNfoData(nfoData);
     await writeTextIfChanged(nfoPath, buildTvShowNfo(nfoData));
 
     if (details.poster_path) await _ensureDownloaded(this.tmdb, showFolder, 'poster.jpg', details.poster_path);
@@ -792,7 +1204,8 @@ class NfoFetchRunner {
       seasonDetails = await this.tmdb.getSeasonDetails(tvId, seasonNumber);
       if (!seasonDetails) return false;
 
-      const nfoData = _mapSeasonToNfo({ client: this.tmdb, tvId: String(tvId), season: seasonDetails });
+      let nfoData = _mapSeasonToNfo({ client: this.tmdb, tvId: String(tvId), season: seasonDetails });
+      nfoData = await this.translateNfoData(nfoData);
       await writeTextIfChanged(nfoPath, buildSeasonNfo(nfoData));
 
       if (seasonDetails.poster_path) await _ensureDownloaded(this.tmdb, seasonFolder, 'poster.jpg', seasonDetails.poster_path);
@@ -859,7 +1272,8 @@ class NfoFetchRunner {
     const details = preFetched && preSeason === sn && preEpisode === episodeNumber ? preFetched : await this.tmdb.getEpisodeDetails(tvId, sn, episodeNumber);
     if (!details) return false;
 
-    const nfoData = _mapEpisodeToNfo({ client: this.tmdb, episode: details });
+    let nfoData = _mapEpisodeToNfo({ client: this.tmdb, episode: details });
+    nfoData = await this.translateNfoData(nfoData);
     const baseName = path.parse(filename).name;
     const nfoPath = path.join(dirPath, `${baseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildEpisodeNfo(nfoData));
@@ -905,7 +1319,8 @@ class NfoFetchRunner {
     const details = await this.tmdb.getMovieDetails(tmdbId);
     if (!details) return false;
 
-    const nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
+    let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
+    nfoData = await this.translateNfoData(nfoData);
     const baseName = path.parse(filename).name;
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
@@ -957,7 +1372,8 @@ class NfoFetchRunner {
     if (!details) return false;
 
     const nfoPath = path.join(showFolder, 'tvshow.nfo');
-    const nfoData = _mapTvToNfo({ client: this.tmdb, tv: details });
+    let nfoData = _mapTvToNfo({ client: this.tmdb, tv: details });
+    nfoData = await this.translateNfoData(nfoData);
     await writeTextIfChanged(nfoPath, buildTvShowNfo(nfoData));
 
     if (details.poster_path) await _ensureDownloaded(this.tmdb, showFolder, 'poster.jpg', details.poster_path);
@@ -993,7 +1409,7 @@ class NfoFetchRunner {
     return tvId > 0 ? tvId : 0;
   }
 
-  async scrapeByIndexId({ indexId, tmdbId = 0 } = {}) {
+  async scrapeByIndexId({ indexId, tmdbId = 0, scrapeId = '' } = {}) {
     const id = Number(indexId || 0) || 0;
     if (!id) return { ok: false };
     const row = await this.knexVideo('video_index')
@@ -1003,11 +1419,16 @@ class NfoFetchRunner {
     if (!row) return { ok: false };
 
     const mediaType = row.media_type ? String(row.media_type).trim() : '';
-    const override = Number(tmdbId || 0) || 0;
+    const overrideRaw = String(scrapeId || tmdbId || '').trim();
+    const override = Number(tmdbId || (/^\d+$/.test(overrideRaw) ? overrideRaw : 0)) || 0;
 
     try {
       if (mediaType === 'movie' || mediaType === 'bdmv' || mediaType === 'video_ts') {
-        const done = override ? await this._processMovieRowByTmdbId(row, override) : await this.processMovieRow(row);
+        const done = this.scrapeSource === 'metatube' && overrideRaw
+          ? await this._processMovieRowByMetaTubeId(row, overrideRaw)
+          : override
+              ? await this._processMovieRowByTmdbId(row, override)
+              : await this.processMovieRow(row);
         if (!done) await this.markFailed(row);
         return { ok: !!done };
       }

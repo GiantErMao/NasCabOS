@@ -17,6 +17,8 @@ class ReadView extends StatefulWidget {
   final ReadItemBuilder? itemBuilder;
   final GestureTapCallback? onMenu;
   final VoidCallback? onScroll;
+  final ReadLocationLongPressCallback? onLocationLongPress;
+  final ChapterData? highlightedLocation;
 
   const ReadView({
     super.key,
@@ -24,6 +26,8 @@ class ReadView extends StatefulWidget {
     this.itemBuilder,
     this.onMenu,
     this.onScroll,
+    this.onLocationLongPress,
+    this.highlightedLocation,
   }) : readController = readController as ReadControllerImpl;
 
   @override
@@ -173,25 +177,49 @@ class _ReadViewState extends State<ReadView> {
           onVerticalDrag:
               widget.readController.enableVerticalDrag ? widget.onMenu : null,
         );
-        if (widget.readController.enableTapPage) {
+        if (widget.readController.enableTapPage ||
+            widget.onLocationLongPress != null) {
           Offset tapPosition = Offset.zero;
           double tapWidth = size.width / 3;
           Rect leftTap = Rect.fromLTWH(0, 0, tapWidth, size.height);
           Rect midTap = Rect.fromLTWH(tapWidth, 0, tapWidth, size.height);
           Rect rightTap = Rect.fromLTWH(2 * tapWidth, 0, tapWidth, size.height);
           current = GestureDetector(
-            onTap: () {
-              if (leftTap.contains(tapPosition)) {
-                _previousPage(true);
-              } else if (midTap.contains(tapPosition)) {
-                widget.onMenu?.call();
-              } else if (rightTap.contains(tapPosition)) {
-                _nextPage(true);
-              }
-            },
-            onTapDown: (details) {
-              tapPosition = details.globalPosition;
-            },
+            onTap: widget.readController.enableTapPage
+                ? () {
+                    if (leftTap.contains(tapPosition)) {
+                      _previousPage(true);
+                    } else if (midTap.contains(tapPosition)) {
+                      widget.onMenu?.call();
+                    } else if (rightTap.contains(tapPosition)) {
+                      _nextPage(true);
+                    }
+                  }
+                : null,
+            onTapDown: widget.readController.enableTapPage
+                ? (details) {
+                    tapPosition = details.localPosition;
+                  }
+                : null,
+            onLongPressStart: widget.onLocationLongPress == null
+                ? null
+                : (details) {
+                    final index = pageController.page?.round() ??
+                        pageController.initialPage;
+                    final data = _paintDataAt(index);
+                    if (data == null) return;
+                    final location = hitTestBookPageLocation(
+                      controller: widget.readController,
+                      data: data,
+                      localPosition: details.localPosition,
+                    );
+                    if (location != null) {
+                      widget.onLocationLongPress!(
+                        location,
+                        details.globalPosition,
+                      );
+                    }
+                  },
             child: current,
           );
         }
@@ -226,6 +254,13 @@ class _ReadViewState extends State<ReadView> {
               data: data,
               loadingWidget: widget.readController.loadingWidget,
             ),
+            if (widget.highlightedLocation != null)
+              ReadHighlightPaint(
+                data: data,
+                controller: widget.readController,
+                location: widget.highlightedLocation!,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             if (widget.itemBuilder != null)
               widget.itemBuilder!.call(
                 context,
@@ -263,6 +298,13 @@ class _ReadViewState extends State<ReadView> {
       ),
       child: child,
     );
+  }
+
+  PaintData? _paintDataAt(int index) {
+    final chapterIndexDiff = widget.readController.findChapterIndex(index);
+    if (chapterIndexDiff[0] < 0 || chapterIndexDiff[1] < 0) return null;
+    return widget.readController.bookPageList[chapterIndexDiff[0]]
+        ?[chapterIndexDiff[1]];
   }
 
   Future<void> _previousPage(bool notify) async {

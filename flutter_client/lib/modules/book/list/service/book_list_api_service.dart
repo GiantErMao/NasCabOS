@@ -1,4 +1,6 @@
 import 'package:get/get.dart';
+import 'package:path/path.dart' as p;
+
 import '../../../../core/api/api_controller.dart';
 import '../../../../core/api/base_api_service.dart';
 
@@ -60,6 +62,7 @@ class BookListApiService extends BaseApiService {
     int? collectionId,
     bool isFavorite = false,
     String? search,
+    String? letterFilter,
     List<String>? sourceList,
     String? sortBy,
     String? sortOrder,
@@ -78,6 +81,8 @@ class BookListApiService extends BaseApiService {
           'collection_id': collectionId,
         if (isFavorite) 'is_favorite': 1,
         if (search != null) 'search': search,
+        if (letterFilter != null && letterFilter.isNotEmpty)
+          'letter_filter': letterFilter,
         if (sourceList != null) 'sourceList': sourceList,
         if (sortBy != null) 'sort_by': sortBy,
         if (sortOrder != null) 'sort_order': sortOrder,
@@ -246,6 +251,7 @@ class BookListItem {
     }
 
     String parseString(dynamic v) => (v?.toString() ?? '').trim();
+    String parsePathString(dynamic v) => v?.toString() ?? '';
     bool parseBool(dynamic v) {
       if (v is bool) return v;
       if (v is num) return v.toInt() == 1;
@@ -254,11 +260,20 @@ class BookListItem {
       return false;
     }
 
+    final itemPath = parsePathString(json['path']);
+    final filename = parsePathString(json['filename']);
+    final serverFullPath = parsePathString(
+      json['full_path'] ?? json['fullPath'],
+    );
+    final fullPath = itemPath.isNotEmpty && filename.isNotEmpty
+        ? p.join(itemPath, filename)
+        : serverFullPath;
+
     return BookListItem(
       id: parseInt(json['id']),
       type: parseString(json['type']),
-      path: parseString(json['path']),
-      filename: parseString(json['filename']),
+      path: itemPath,
+      filename: filename,
       fileHash: parseString(json['file_hash'] ?? json['fileHash']),
       title: parseString(json['title']),
       artist: parseString(json['artist']),
@@ -268,9 +283,9 @@ class BookListItem {
       coverState: parseInt(json['cover_state'] ?? json['coverState']),
       viewTime: parseInt(json['view_time'] ?? json['viewTime']),
       createTime: parseString(json['create_time'] ?? json['createTime']),
-      fullPath: parseString(json['full_path'] ?? json['fullPath']),
+      fullPath: fullPath,
       showType: parseString(json['show_type'] ?? json['showType']),
-      firstFilePath: parseString(
+      firstFilePath: parsePathString(
         json['first_file_path'] ?? json['firstFilePath'],
       ),
       totalPage: parseInt(json['total_page'] ?? json['totalPage']),

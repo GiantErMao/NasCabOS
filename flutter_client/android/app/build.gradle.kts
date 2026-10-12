@@ -13,7 +13,13 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
-
+val releaseStoreFile = keystoreProperties["storeFile"]?.let {
+    rootProject.file(it.toString())
+}
+val hasReleaseSigning = releaseStoreFile?.isFile == true &&
+    keystoreProperties["keyAlias"] != null &&
+    keystoreProperties["keyPassword"] != null &&
+    keystoreProperties["storePassword"] != null
 android {
     namespace = "com.nascabos.mobile"
     compileSdk = flutter.compileSdkVersion
@@ -37,20 +43,25 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { rootProject.file(it.toString()) }
-            storePassword = keystoreProperties["storePassword"] as String?
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String?
+                keyPassword = keystoreProperties["keyPassword"] as String?
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties["storePassword"] as String?
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
+
 }
 
 flutter {

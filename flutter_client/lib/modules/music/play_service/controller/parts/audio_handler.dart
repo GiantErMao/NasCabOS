@@ -1,14 +1,37 @@
 part of '../music_play_service_controller.dart';
 
-class _MusicAudioHandler extends BaseAudioHandler
-    with QueueHandler, SeekHandler {
+class _MusicMediaPlaybackDelegate extends AppMediaPlaybackDelegate {
   final MusicPlayServiceController controller;
   bool? _lastPlaying;
   AudioProcessingState? _lastProcessingState;
   int? _lastQueueIndex;
   DateTime? _lastPositionUpdate;
 
-  _MusicAudioHandler(this.controller);
+  _MusicMediaPlaybackDelegate(this.controller);
+
+  @override
+  String get ownerId => MusicPlayServiceController.mediaOwnerId;
+
+  @override
+  Future<void> onActivated() async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await controller._applyMusicAudioSessionConfiguration(
+        await AudioSession.instance,
+      );
+    }
+    updateQueue(controller._buildQueueMediaItems());
+    final index = controller.currentIndex.value;
+    if (index >= 0 && index < controller.playlist.length) {
+      controller._syncMediaItem(index, forceUpdate: true);
+    }
+    controller._syncHandlerPlaybackState();
+  }
+
+  @override
+  Future<void> onDeactivated(String? nextOwnerId) async {
+    controller._desiredPlaying = false;
+    await controller._player?.pause();
+  }
 
   @override
   Future<void> skipToQueueItem(int index) async {
@@ -43,25 +66,12 @@ class _MusicAudioHandler extends BaseAudioHandler
       return;
     }
     if (controller.loopMode.value == MusicLoopMode.shuffle) {
-      final repeat = playbackState.value.repeatMode;
-      switch (repeat) {
-        case AudioServiceRepeatMode.one:
-          await controller.setLoopMode(MusicLoopMode.singleLoop);
-          return;
-        case AudioServiceRepeatMode.all:
-        case AudioServiceRepeatMode.group:
-          await controller.setLoopMode(MusicLoopMode.listLoop);
-          return;
-        case AudioServiceRepeatMode.none:
-          await controller.setLoopMode(MusicLoopMode.sequence);
-          return;
-      }
+      await controller.setLoopMode(MusicLoopMode.listLoop);
     }
   }
 
-  @override
   Future<void> updateQueue(List<MediaItem> newQueue) async {
-    queue.add(newQueue);
+    controller._mediaCoordinator.publishQueue(ownerId, newQueue);
   }
 
   @override
@@ -77,13 +87,13 @@ class _MusicAudioHandler extends BaseAudioHandler
   @override
   Future<void> stop() async {
     await controller.stop();
-    await super.stop();
   }
 
   @override
   Future<void> click([MediaButton button = MediaButton.media]) async {
     if (button == MediaButton.media) {
-      final playing = controller._player?.isPlaying ?? controller.isPlaying.value;
+      final playing =
+          controller._player?.isPlaying ?? controller.isPlaying.value;
       if (playing) {
         await pause();
       } else {
@@ -91,7 +101,6 @@ class _MusicAudioHandler extends BaseAudioHandler
       }
       return;
     }
-    await super.click(button);
   }
 
   @override
@@ -138,6 +147,7 @@ class _MusicAudioHandler extends BaseAudioHandler
         lastUpdate == null ||
         now.difference(lastUpdate) >= positionUpdateInterval;
 
+    final isFirstSync = _lastPlaying == null || _lastProcessingState == null;
     _lastPlaying = playing;
     _lastProcessingState = processingState;
     _lastQueueIndex = queueIndex;
@@ -162,9 +172,9 @@ class _MusicAudioHandler extends BaseAudioHandler
     ];
 
     // 首次同步或关键状态变化时强制更新，确保 OPPO ColorOS 能正确接收状态
-    final isFirstSync = _lastPlaying == null || _lastProcessingState == null;
     if (isFirstSync || criticalChanged || shouldUpdatePosition) {
-      playbackState.add(
+      controller._mediaCoordinator.publishPlaybackState(
+        ownerId,
         PlaybackState(
           controls: controls,
           systemActions: const {

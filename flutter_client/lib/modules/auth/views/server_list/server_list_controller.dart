@@ -23,7 +23,6 @@ import 'package:NasCabOS/core/routes/app_routes.dart';
 import '../../../home/views/components/session_wallpaper_background.dart';
 import '../login/login_twofa_dialog.dart';
 import '../../service/response/login_response.dart';
-import '../../service/response/server_status_response.dart';
 import 'pair_code_scanner.dart';
 import '../../../../core/utils/same_machine_checker_stub.dart'
     if (dart.library.html) '../../../../core/utils/same_machine_checker_web.dart';
@@ -371,75 +370,29 @@ class ServerListController extends GetxController {
     _serverTapLocked = true;
     _showTapLoadingDialog(context);
     try {
-      final hasPairCode = (serverItem.pairCode ?? '').trim().isNotEmpty;
-      final hasDirectUrl =
-          serverItem.serverUrl.trim().isNotEmpty &&
-          serverItem.serverUrl.trim() != ApiController.p2pBaseUrl;
-
       // 合并网络检测，避免重复 Connectivity 查询
       final network = await _checkNetworkType();
 
       try {
-        ServerStatusResponse? status;
-        var usingP2p = false;
-
-        // ═══════════════════════════════════════════════════
-        // Phase 1: 局域网直连（WiFi/有线网络）
-        // ═══════════════════════════════════════════════════
-        if (hasDirectUrl) {
-          // 蜂窝网络 + 私有 IP → 必然不可达，跳过直连
-          // final isPrivateLanServerUrl = _isUrlPrivateLan(serverItem.serverUrl);
-          // if (!(network.isCellular && isPrivateLanServerUrl)) {
-            await ApiController.instance.disconnectP2p().catchError((_) {});
-            ApiController.instance.setBaseUrl(serverItem.serverUrl);
-            status = await AuthApiService.instance.checkServerStatus(
-              false,
-              timeout: const Duration(seconds: 2),
-              maxRetries: 0,
+        final connected = await ApiController.instance
+            .connectToServerUsingBestChannel(
+              serverItem,
+              skipPrivateDirectUrls: network.isCellular,
             );
-            print('✅ 直连服务器状态: $status');
-          // }
-
-          // serverUrl 失败，尝试 lanIpv4（避免重复探测相同 URL）
-          if ((status == null || !status.success || !status.isNasCabServer) &&
-              hasPairCode) {
-            final lan = (serverItem.lanIpv4 ?? '').trim();
-            final port = _resolveHttpPort(serverItem);
-            final lanUrl = lan.isNotEmpty ? 'http://$lan:$port' : '';
-            final lanAlreadyTried =
-                lanUrl.isNotEmpty &&
-                _normalizeUrl(lanUrl) == _normalizeUrl(serverItem.serverUrl);
-            if (lan.isNotEmpty && !lanAlreadyTried) {
-              await ApiController.instance.disconnectP2p().catchError((_) {});
-              ApiController.instance.setBaseUrl(lanUrl);
-              final lanStatus = await AuthApiService.instance.checkServerStatus(
-                false,
-                timeout: const Duration(seconds: 2),
-                maxRetries: 0,
-              );
-              if (_matchServerId(lanStatus, serverItem)) {
-                status = lanStatus;
-              }
-            }
-          }
+        if (!connected) {
+          _showErrorDialog('server_connect_fail'.tr);
+          return;
         }
 
-        // ═══════════════════════════════════════════════════
-        // Phase 2: P2P 自动探测直连/中继，先连上者优先
-        // ═══════════════════════════════════════════════════
-        if ((status == null || !status.success || !status.isNasCabServer) &&
-            hasPairCode) {
-          usingP2p = true;
-          await ApiController.instance.disconnectP2p().catchError((_) {});
-          await _ensureP2pConnected(serverItem);
-          status = await AuthApiService.instance.checkServerStatus(
-            false,
-            timeout: const Duration(seconds: 3),
-            maxRetries: 0,
-          );
-        }
+        final selectedBaseUrl = ApiController.instance.baseUrl;
+        final usingP2p = ApiController.instance.isP2pMode;
+        final status = await AuthApiService.instance.checkServerStatus(
+          false,
+          timeout: const Duration(seconds: 3),
+          maxRetries: 0,
+        );
 
-        if (status == null || !status.success || !status.isNasCabServer) {
+        if (!status.success || !status.isNasCabServer) {
           _showErrorDialog('server_connect_fail'.tr);
           return;
         }
@@ -490,17 +443,14 @@ class ServerListController extends GetxController {
           }
           await loginToServer(
             serverItem,
-            baseUrlOverride: usingP2p ? ApiController.p2pBaseUrl : null,
+            baseUrlOverride: selectedBaseUrl,
             passwordOverride: password.trim(),
             persistPasswordOverride: false,
           );
           return;
         }
 
-        await loginToServer(
-          serverItem,
-          baseUrlOverride: usingP2p ? ApiController.p2pBaseUrl : null,
-        );
+        await loginToServer(serverItem, baseUrlOverride: selectedBaseUrl);
       } finally {
         _dismissTapLoadingDialog();
       }
@@ -514,28 +464,6 @@ class ServerListController extends GetxController {
     } finally {
       _serverTapLocked = false;
     }
-  }
-
-  /// 从 ServerInfoBean 解析 HTTP 端口（优先 httpPort，其次 httpsPort，默认 9000）
-  String _resolveHttpPort(ServerInfoBean serverItem) {
-    final httpPort = serverItem.serverPortHttp.trim();
-    if (httpPort.isNotEmpty) return httpPort;
-    final httpsPort = serverItem.serverPortHttps.trim();
-    if (httpsPort.isNotEmpty) return httpsPort;
-    return '9000';
-  }
-
-  /// 校验 checkServerStatus 返回的 serverId 是否与 serverItem 匹配
-  bool _matchServerId(
-    ServerStatusResponse status,
-    ServerInfoBean serverItem,
-  ) {
-    if (!status.success || !status.isNasCabServer) return false;
-    final statusServerId =
-        (status.serverData?['serverId']?.toString() ?? '').trim();
-    final itemServerId = serverItem.serverId.trim();
-    if (statusServerId.isEmpty || itemServerId.isEmpty) return false;
-    return statusServerId == itemServerId;
   }
 
   void _showTapLoadingDialog(BuildContext context) {
@@ -617,32 +545,6 @@ class ServerListController extends GetxController {
     );
   }
 
-  Future<void> _ensureP2pConnected(ServerInfoBean serverItem) async {
-    final code = (serverItem.pairCode ?? '').trim();
-    if (code.isEmpty) {
-      throw Exception('pair_code_empty');
-    }
-    // 遇到 P2P_DEVICE_OFFLINE 时重试，设备可能处于重连信令服务器的短暂窗口期
-    const maxRetries = 3;
-    const retryDelay = Duration(milliseconds: 1500);
-    for (var attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await ApiController.instance.connectP2pByPairCode(
-          code,
-          icePreference: P2pIcePreference.auto,
-        );
-        return;
-      } catch (e) {
-        final isOfflineError = e.toString().contains('P2P_DEVICE_OFFLINE');
-        if (isOfflineError && attempt < maxRetries) {
-          await Future<void>.delayed(retryDelay);
-          continue;
-        }
-        rethrow;
-      }
-    }
-  }
-
   /// 合并网络类型检测，避免重复 Connectivity 查询。
   /// 返回 ({bool onWifi, bool isCellular}) 记录。
   Future<({bool onWifi, bool isCellular})> _checkNetworkType() async {
@@ -662,45 +564,6 @@ class ServerListController extends GetxController {
     } catch (_) {
       return (onWifi: true, isCellular: false);
     }
-  }
-
-  /// 标准化 URL 用于比较（去除末尾斜杠、统一小写 scheme+host）
-  String _normalizeUrl(String url) {
-    try {
-      final uri = Uri.tryParse(url.trim());
-      if (uri == null) return url.trim().toLowerCase();
-      final scheme = uri.scheme.toLowerCase();
-      final host = uri.host.toLowerCase();
-      final port = uri.hasPort ? ':${uri.port}' : '';
-      final path = uri.path.replaceAll(RegExp(r'/+$'), '');
-      return '$scheme://$host$port$path';
-    } catch (_) {
-      return url.trim().toLowerCase();
-    }
-  }
-
-  /// 检测URL是否是私有局域网地址
-  bool _isUrlPrivateLan(String url) {
-    try {
-      final uri = Uri.tryParse(url);
-      if (uri == null) return false;
-      return _isPrivateIpv4(uri.host);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// 检测是否是私有IPv4地址（局域网/回环地址）
-  bool _isPrivateIpv4(String host) {
-    if (!_isIpv4(host)) return false;
-    final parts = host.split('.');
-    final a = int.tryParse(parts[0]) ?? -1;
-    final b = int.tryParse(parts[1]) ?? -1;
-    if (a == 10) return true;
-    if (a == 172 && b >= 16 && b <= 31) return true;
-    if (a == 192 && b == 168) return true;
-    if (a == 127) return true;
-    return false;
   }
 
   /// 显示错误对话框
@@ -982,20 +845,6 @@ class ServerListController extends GetxController {
         ? httpPort!.trim()
         : ((httpsPort ?? '').trim().isNotEmpty ? httpsPort!.trim() : '9000');
     return 'http://$lan:$port';
-  }
-
-  bool _isIpv4(String host) {
-    final s = host.trim();
-    if (s.isEmpty) return false;
-    final m = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(s);
-    if (!m) return false;
-    final parts = s.split('.');
-    if (parts.length != 4) return false;
-    for (final p in parts) {
-      final v = int.tryParse(p);
-      if (v == null || v < 0 || v > 255) return false;
-    }
-    return true;
   }
 
   /// 处理菜单选择

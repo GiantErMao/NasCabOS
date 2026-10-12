@@ -655,6 +655,7 @@ class ReadControllerImpl implements ReadController {
   int findChapterPageIndex(ChapterData chapter, List<PaintData> bookDataList) {
     if (chapter.sentenceIndex > 0 || chapter.wordIndex > 0) {
       bool hasSummary = false;
+      int? lastSentencePage;
       for (int i = 0; i < bookDataList.length; i++) {
         PaintData bookData = bookDataList[i];
         if (bookData.bookPage == null) {
@@ -664,11 +665,18 @@ class ReadControllerImpl implements ReadController {
           continue;
         }
         for (final bookLine in bookData.bookPage!.lines) {
-          if (bookLine.sentence.index == chapter.sentenceIndex &&
-              bookLine.startIndex == chapter.wordIndex) {
+          if (bookLine.sentence.index != chapter.sentenceIndex) continue;
+          lastSentencePage = i;
+          final endIndex = bookLine.endIndex;
+          if (chapter.wordIndex >= bookLine.startIndex &&
+              endIndex != null &&
+              chapter.wordIndex < endIndex) {
             return hasSummary ? i - 1 : i;
           }
         }
+      }
+      if (lastSentencePage != null) {
+        return hasSummary ? lastSentencePage - 1 : lastSentencePage;
       }
     }
     return 0;
@@ -711,6 +719,13 @@ class ReadControllerImpl implements ReadController {
   @override
   void jumpToPage(int pageIndex) {
     jumpToPageCallback?.call(firstIndex + pageIndex);
+  }
+
+  @override
+  void jumpToLocation(ChapterData chapter) {
+    final pages = bookPageList[chapter.chapterIndex];
+    if (pages == null || pages.isEmpty) return;
+    _jump(chapter);
   }
 
   void _firstIndexDec(

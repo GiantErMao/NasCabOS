@@ -335,7 +335,7 @@ function _maybeConvertTmdbPosterImageUrlToSize(thumbUrl, size) {
 function _sanitizeTmdbIdForPath(tmdbId) {
   const id = String(tmdbId || '').trim();
   if (!id) return '';
-  if (!/^\d+$/.test(id)) return '';
+  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) return '';
   return id;
 }
 

@@ -10,6 +10,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import '../../../../core/api/api_controller.dart';
 import '../../../../core/api/base_api_service.dart';
+import '../../../../core/audio/app_media_playback_coordinator.dart';
+import '../../../../core/audio/app_media_playback_delegate.dart';
 import '../../../../utils/cache_manager.dart';
 import '../../../../utils/dialog_util.dart';
 import '../../list/models/music_list_models.dart';
@@ -75,6 +77,8 @@ class MusicPlaylistPaging {
 
 class MusicPlayServiceController extends GetxController
     with WidgetsBindingObserver {
+  static const String mediaOwnerId = 'music';
+
   static MusicPlayServiceController get instance {
     if (Get.isRegistered<MusicPlayServiceController>()) {
       return Get.find<MusicPlayServiceController>();
@@ -110,7 +114,9 @@ class MusicPlayServiceController extends GetxController
   final RxString downloadingFileHash = ''.obs;
 
   MusicPlayerAdapter? _player;
-  _MusicAudioHandler? _handler;
+  final AppMediaPlaybackCoordinator _mediaCoordinator =
+      AppMediaPlaybackCoordinator.instance;
+  _MusicMediaPlaybackDelegate? _handler;
   Future<void>? _serviceInitFuture;
   final List<MusicProgressListener> _progressListeners = [];
   Timer? _positionPollTimer;

@@ -152,6 +152,9 @@ router.get(
 // Start/Restart Transcoding (returns m3u8)
 router.get('/transcode', authenticateJWT, requirePermission(['download', 'view'], { from: 'query.filePath' }), videoPlayerController.transcode);
 
+// Current transcode diagnostics for player UI.
+router.get('/transcode-info', authenticateJWT, videoPlayerController.getTranscodeInfo);
+
 // Get embedded subtitle as WebVTT (cached)
 router.get(
   '/subtitle-vtt',

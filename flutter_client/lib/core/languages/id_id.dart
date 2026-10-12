@@ -78,6 +78,8 @@ class IdId extends Translations {
 
       'txt_reader_settings': 'Pengaturan membaca',
       'txt_reader_show_progress': 'Tampilkan bilah progres',
+      'txt_reader_mode_paged': 'Halaman',
+      'txt_reader_mode_continuous': 'Gulir berkelanjutan',
       'txt_reader_font_size': 'Ukuran font',
       'txt_reader_text_color': 'Warna teks',
       'txt_reader_background': 'Latar belakang',
@@ -1580,8 +1582,7 @@ class IdId extends Translations {
           'Mengurangi ukuran pratinjau dapat mengurangi penggunaan lalu lintas dan meningkatkan kecepatan pemuatan di lingkungan internet',
       'photo_preview_size_origin': 'Ukuran Asli',
       'photo_preview_size_long_side': 'Ukuran Sisi Panjang @size',
-      'photo_preview_wifi_original':
-          'Jelajahi gambar asli melalui WiFi',
+      'photo_preview_wifi_original': 'Jelajahi gambar asli melalui WiFi',
       'photo_preview_wifi_original_subtitle':
           'Hanya berlaku untuk perangkat ini',
       'smart_date_album': 'Album Tanggal Pintar',
@@ -1602,8 +1603,10 @@ class IdId extends Translations {
       'photo_source_scan_now': 'Pindai Sekarang',
       'photo_source_scan_all': 'Pindai Semua',
       'photo_source_reset_thumbnails': 'Reset Thumbnails',
-      'photo_source_reset_thumbnails_tooltip': 'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
-      'photo_source_reset_thumbnails_confirm': 'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
+      'photo_source_reset_thumbnails_tooltip':
+          'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
+      'photo_source_reset_thumbnails_confirm':
+          'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
       'photo_source_scan_when_start': 'Pindai Saat Mulai',
       'photo_source_scan_when_change': 'Pindai Saat Ada Perubahan',
       'photo_source_scan_interval': 'Pindai Berkala',
@@ -2884,6 +2887,46 @@ class IdId extends Translations {
           'Gagal memulai Docker. Periksa status layanan atau izin pengguna saat ini.',
       'docker_stop_failed':
           'Gagal menghentikan Docker. Periksa status layanan atau izin pengguna saat ini.',
+      'txt_speech_title': 'Read Aloud',
+      'txt_speech_from_current': 'Read from Current Position',
+      'txt_speech_from_here': 'Read from Here',
+      'txt_speech_play': 'Resume',
+      'txt_speech_pause': 'Pause',
+      'txt_speech_stop': 'Stop',
+      'txt_speech_sync_reading': 'Go to Reading Position',
+      'txt_speech_previous': 'Previous Segment',
+      'txt_speech_next': 'Next Segment',
+      'txt_speech_rate': 'Speed',
+      'txt_speech_voice': 'Voice',
+      'txt_speech_no_voices': 'No system voices available',
+      'txt_speech_system_default': 'System Default',
+      'txt_speech_reading': 'Reading aloud',
+      'txt_speech_failed': 'Read aloud failed: @error',
+      'txt_speech_web_limit':
+          'Reading may pause when the browser is in background',
+      'txt_speech_engine': 'Voice engine',
+      'txt_speech_engine_system': 'System',
+      'txt_speech_engine_local': 'Local neural',
+      'txt_speech_source_system': 'System',
+      'txt_speech_source_local': 'Local',
+      'txt_speech_switch_to_system': 'Switch to system voice',
+      'txt_speech_model_not_installed': 'Local model is not installed',
+      'txt_speech_model_download_size': 'Download about 129 MB',
+      'txt_speech_model_download': 'Download',
+      'txt_speech_model_cancel': 'Cancel download',
+      'txt_speech_model_verifying': 'Verifying model',
+      'txt_speech_model_extracting': 'Installing model',
+      'txt_speech_model_installed_size': 'Installed - @size',
+      'txt_speech_model_delete': 'Delete model',
+      'txt_speech_model_delete_confirm':
+          'Delete the local neural voice model from this device?',
+      'txt_speech_model_failed': 'Model installation failed',
+      'txt_speech_model_retry': 'Retry',
+      'txt_speech_license_title': 'Non-commercial model license',
+      'txt_speech_license_body':
+          'For non-commercial internal evaluation only. Do not enable in distributed or commercial builds.',
+      'txt_speech_license_source': 'License source',
+      'txt_speech_license_accept': 'Agree and download',
     },
   };
 }

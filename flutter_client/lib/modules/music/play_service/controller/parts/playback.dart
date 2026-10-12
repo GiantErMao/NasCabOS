@@ -147,6 +147,9 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
       return;
     }
     await _initService();
+    if (autoPlay) {
+      await _activateMediaOwner();
+    }
     _paging = paging;
     _pagingToken++;
     _pagingLoading = false;
@@ -171,6 +174,7 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
   Future<void> playAt(int index) async {
     if (playlist.isEmpty) return;
     await _initService();
+    await _activateMediaOwner();
     _desiredPlaying = true;
     await _activateIosAudioSessionForPlayback();
     await _ensurePlaylistUpToDate();
@@ -191,6 +195,7 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
 
   Future<void> play() async {
     await _initService();
+    await _activateMediaOwner();
     _desiredPlaying = true;
     await _activateIosAudioSessionForPlayback();
     await _ensureNotificationPermission();
@@ -245,6 +250,7 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
   Future<void> playNext({bool forcePlay = false}) async {
     if (playlist.isEmpty) return;
     await _initService();
+    await _activateMediaOwner();
     await _activateIosAudioSessionForPlayback();
     _suppressCompletedUntil = DateTime.now().add(const Duration(seconds: 4));
     _isSkippingTrack = true;
@@ -275,6 +281,7 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
   Future<void> playPrevious({bool forcePlay = false}) async {
     if (playlist.isEmpty) return;
     await _initService();
+    await _activateMediaOwner();
     await _activateIosAudioSessionForPlayback();
     _suppressCompletedUntil = DateTime.now().add(const Duration(seconds: 4));
     _isSkippingTrack = true;
@@ -783,7 +790,10 @@ extension MusicPlayServicePlayback on MusicPlayServiceController {
       if (item.duration != null && item.duration! > Duration.zero) {
         _handler!.updateQueue(_buildQueueMediaItems());
       }
-      _handler!.mediaItem.add(item);
+      _mediaCoordinator.publishMediaItem(
+        MusicPlayServiceController.mediaOwnerId,
+        item,
+      );
     }
   }
 

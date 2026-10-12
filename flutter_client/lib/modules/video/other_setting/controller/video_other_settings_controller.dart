@@ -4,6 +4,8 @@ import '../../../../utils/dialog_util.dart';
 import '../../../../utils/toast_util.dart';
 import '../service/video_tmdb_settings_api_service.dart';
 
+const String _defaultMetaTubeBaseUrl = '';
+
 class TranscodeHwDecoderOption {
   final String key;
   final String label;
@@ -20,7 +22,10 @@ class TranscodeHwDecoderOption {
   factory TranscodeHwDecoderOption.fromJson(Map<String, dynamic> json) {
     final codecsRaw = json['codecs'];
     final codecs = codecsRaw is List
-        ? codecsRaw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+        ? codecsRaw
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
         : <String>[];
     return TranscodeHwDecoderOption(
       key: (json['key']?.toString() ?? '').trim(),
@@ -54,7 +59,17 @@ class VideoOtherSettingsController extends GetxController {
 
   final TextEditingController tmdbTokenController = TextEditingController();
   final TextEditingController proxyUrlController = TextEditingController();
+  final TextEditingController metatubeBaseUrlController =
+      TextEditingController();
+  final TextEditingController metatubeTokenController = TextEditingController();
+  final TextEditingController metatubeProviderController =
+      TextEditingController();
+  final TextEditingController nfoTranslateApiUrlController =
+      TextEditingController();
+  final TextEditingController nfoTranslateApiKeyController =
+      TextEditingController();
 
+  final RxString scrapeSource = 'tmdb'.obs;
   final RxBool proxyEnabled = false.obs;
   final RxString tmdbLanguage = ''.obs;
   final RxString transcodeTempDir = ''.obs;
@@ -63,6 +78,9 @@ class VideoOtherSettingsController extends GetxController {
   final RxList<TranscodeHwDecoderOption> availableHwDecoders =
       <TranscodeHwDecoderOption>[].obs;
   final RxBool subtitlePreExtractEnabled = true.obs;
+  final RxBool metatubeFallback = true.obs;
+  final RxBool nfoTranslateEnabled = false.obs;
+  final RxBool nfoTranslateTitleEnabled = false.obs;
 
   final _api = VideoTmdbSettingsApiService.instance;
 
@@ -78,6 +96,11 @@ class VideoOtherSettingsController extends GetxController {
   void onClose() {
     tmdbTokenController.dispose();
     proxyUrlController.dispose();
+    metatubeBaseUrlController.dispose();
+    metatubeTokenController.dispose();
+    metatubeProviderController.dispose();
+    nfoTranslateApiUrlController.dispose();
+    nfoTranslateApiKeyController.dispose();
     super.onClose();
   }
 
@@ -91,6 +114,8 @@ class VideoOtherSettingsController extends GetxController {
         return;
       }
       final data = res.data ?? <String, dynamic>{};
+      final source = (data['scrapeSource']?.toString() ?? '').trim();
+      scrapeSource.value = source == 'metatube' ? 'metatube' : 'tmdb';
       final rawToken = (data['accessToken']?.toString() ?? '').trim();
       // 已加密的 token（enc. 开头）不显示、不回填
       tmdbTokenController.text = rawToken.startsWith('enc.') ? '' : rawToken;
@@ -99,6 +124,37 @@ class VideoOtherSettingsController extends GetxController {
       proxyUrlController.text = (data['proxyUrl']?.toString() ?? '').trim();
       final lang = (data['language']?.toString() ?? '').trim();
       tmdbLanguage.value = allowedTmdbLanguages.contains(lang) ? lang : '';
+      final metatubeBaseUrl = (data['metatubeBaseUrl']?.toString() ?? '')
+          .trim();
+      metatubeBaseUrlController.text = metatubeBaseUrl.isNotEmpty
+          ? metatubeBaseUrl
+          : _defaultMetaTubeBaseUrl;
+      final rawMetaTubeToken = (data['metatubeToken']?.toString() ?? '').trim();
+      metatubeTokenController.text = rawMetaTubeToken.startsWith('enc.')
+          ? ''
+          : rawMetaTubeToken;
+      metatubeProviderController.text =
+          (data['metatubeProvider']?.toString() ?? '').trim();
+      metatubeFallback.value =
+          data['metatubeFallback'] == null ||
+          data['metatubeFallback'] == 1 ||
+          data['metatubeFallback'] == '1' ||
+          data['metatubeFallback'] == true;
+      nfoTranslateEnabled.value =
+          data['nfoTranslateEnable'] == 1 ||
+          data['nfoTranslateEnable'] == '1' ||
+          data['nfoTranslateEnable'] == true;
+      nfoTranslateTitleEnabled.value =
+          data['nfoTranslateTitleEnable'] == 1 ||
+          data['nfoTranslateTitleEnable'] == '1' ||
+          data['nfoTranslateTitleEnable'] == true;
+      nfoTranslateApiUrlController.text =
+          (data['nfoTranslateApiUrl']?.toString() ?? '').trim();
+      final rawTranslateApiKey =
+          (data['nfoTranslateApiKey']?.toString() ?? '').trim();
+      nfoTranslateApiKeyController.text = rawTranslateApiKey.startsWith('enc.')
+          ? ''
+          : rawTranslateApiKey;
     } finally {
       loading.value = false;
     }
@@ -117,16 +173,19 @@ class VideoOtherSettingsController extends GetxController {
       final options = optionsRaw is List
           ? optionsRaw
                 .whereType<Map>()
-                .map((item) => TranscodeHwDecoderOption.fromJson(
-                      item.map((key, value) => MapEntry(key.toString(), value)),
-                    ))
+                .map(
+                  (item) => TranscodeHwDecoderOption.fromJson(
+                    item.map((key, value) => MapEntry(key.toString(), value)),
+                  ),
+                )
                 .where((item) => item.key.isNotEmpty)
                 .toList()
           : <TranscodeHwDecoderOption>[];
       availableHwDecoders.assignAll(options);
       final preferred = (data['preferredHwDecoder']?.toString() ?? '').trim();
-      preferredHwDecoder.value =
-          options.any((item) => item.key == preferred) ? preferred : '';
+      preferredHwDecoder.value = options.any((item) => item.key == preferred)
+          ? preferred
+          : '';
       effectiveHwDecoderLabel.value =
           ((data['effectiveHwDecoder'] as Map?)?['label']?.toString() ?? '')
               .trim();
@@ -138,19 +197,40 @@ class VideoOtherSettingsController extends GetxController {
     final enableProxy = proxyEnabled.value;
     final proxyUrl = proxyUrlController.text.trim();
     final language = tmdbLanguage.value.trim();
+    final source = scrapeSource.value.trim() == 'metatube'
+        ? 'metatube'
+        : 'tmdb';
+    final metatubeBaseUrl = metatubeBaseUrlController.text.trim();
+    final metatubeToken = metatubeTokenController.text.trim();
+    final metatubeProvider = metatubeProviderController.text.trim();
+    final nfoTranslateApiUrl = nfoTranslateApiUrlController.text.trim();
+    final nfoTranslateApiKey = nfoTranslateApiKeyController.text.trim();
 
     if (enableProxy && proxyUrl.isEmpty) {
       ToastUtil.show('video_tmdb_proxy_required'.tr);
+      return;
+    }
+    if (source == 'metatube' && metatubeBaseUrl.isEmpty) {
+      ToastUtil.show('video_metatube_base_url_required'.tr);
       return;
     }
 
     DialogUtil.showLoading(message: 'loading'.tr);
     try {
       final res = await _api.setTmdbConfig(
+        scrapeSource: source,
         accessToken: accessToken,
         proxyEnable: enableProxy,
         proxyUrl: proxyUrl,
         language: language,
+        metatubeBaseUrl: metatubeBaseUrl,
+        metatubeToken: metatubeToken,
+        metatubeProvider: metatubeProvider,
+        metatubeFallback: metatubeFallback.value,
+        nfoTranslateEnable: nfoTranslateEnabled.value,
+        nfoTranslateTitleEnable: nfoTranslateTitleEnabled.value,
+        nfoTranslateApiUrl: nfoTranslateApiUrl,
+        nfoTranslateApiKey: nfoTranslateApiKey,
         showLoading: false,
       );
       if (!res.success) {
@@ -164,6 +244,11 @@ class VideoOtherSettingsController extends GetxController {
     } finally {
       DialogUtil.dismissLoading();
     }
+  }
+
+  void setScrapeSource(String value) {
+    final v = value.trim();
+    scrapeSource.value = v == 'metatube' ? 'metatube' : 'tmdb';
   }
 
   void setTranscodeTempDirDraft(String dir) {
@@ -183,7 +268,9 @@ class VideoOtherSettingsController extends GetxController {
       }
       final data = res.data ?? <String, dynamic>{};
       subtitlePreExtractEnabled.value =
-          data['preExtractEnable'] == 1 || data['preExtractEnable'] == '1' || data['preExtractEnable'] == true;
+          data['preExtractEnable'] == 1 ||
+          data['preExtractEnable'] == '1' ||
+          data['preExtractEnable'] == true;
     } catch (_) {}
   }
 
@@ -243,17 +330,18 @@ class VideoOtherSettingsController extends GetxController {
   String buildHwDecoderSummary(TranscodeHwDecoderOption option) {
     final parts = <String>[];
     if (option.kind.isNotEmpty) {
-      parts.add(option.kind == 'discrete'
-          ? 'video_transcode_hwaccel_kind_discrete'.tr
-          : option.kind == 'integrated'
-              ? 'video_transcode_hwaccel_kind_integrated'.tr
-              : option.kind);
+      parts.add(
+        option.kind == 'discrete'
+            ? 'video_transcode_hwaccel_kind_discrete'.tr
+            : option.kind == 'integrated'
+            ? 'video_transcode_hwaccel_kind_integrated'.tr
+            : option.kind,
+      );
     }
     if (option.codecs.isNotEmpty) {
-      parts.add(option.codecs
-          .map((codec) => codec.toUpperCase())
-          .toSet()
-          .join(' / '));
+      parts.add(
+        option.codecs.map((codec) => codec.toUpperCase()).toSet().join(' / '),
+      );
     }
     return parts.join(' · ');
   }

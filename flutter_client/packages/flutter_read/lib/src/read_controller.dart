@@ -86,6 +86,10 @@ abstract class ReadController {
   // 跳转到指定页（0 起）
   void jumpToPage(int pageIndex);
 
+  // Jump to stable text location
+  // 跳转到稳定文本位置
+  void jumpToLocation(ChapterData chapter);
+
   // Set summary page
   // 设置简介页
   void setSummaryWidget(Widget widget);
@@ -105,6 +109,10 @@ abstract class ReadController {
 
 typedef EdgeCallback = Function(bool isLeft);
 typedef IndexCallback = void Function(int index, {bool pre});
+typedef ReadLocationLongPressCallback = void Function(
+  ChapterData location,
+  Offset globalPosition,
+);
 typedef ReadDataListCallback = void Function(
     int chapterIndex, String title, List<PaintData> bookDataList);
 typedef ReadItemBuilder = Widget Function(

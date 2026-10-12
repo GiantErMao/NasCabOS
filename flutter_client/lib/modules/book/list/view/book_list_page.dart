@@ -237,17 +237,11 @@ class _BookListPageState extends State<BookListPage> {
           final showMultiBar = ctrl.isMultiSelectMode.value;
           final bottomSpace = showMultiBar ? 86.0 : 30.0;
 
-          final rawSearch = ctrl.searchText.value.trim();
-          final selectedLetter =
-              rawSearch.length == 1 &&
-                  (rawSearch == '#' ||
-                      RegExp(r'^[a-zA-Z]$').hasMatch(rawSearch))
-              ? rawSearch.toUpperCase()
-              : null;
-
           final letterFilter = CustomLetterFilter(
-            value: selectedLetter,
-            onChanged: (v) => ctrl.setSearchImmediate(v ?? ''),
+            value: ctrl.letterFilter.value.isEmpty
+                ? null
+                : ctrl.letterFilter.value,
+            onChanged: ctrl.setLetterFilter,
           );
 
           return LayoutBuilder(

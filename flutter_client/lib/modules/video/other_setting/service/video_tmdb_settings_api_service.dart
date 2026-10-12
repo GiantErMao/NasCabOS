@@ -18,19 +18,38 @@ class VideoTmdbSettingsApiService extends BaseApiService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> setTmdbConfig({
+    required String scrapeSource,
     required String accessToken,
     required bool proxyEnable,
     required String proxyUrl,
     required String language,
+    required String metatubeBaseUrl,
+    required String metatubeToken,
+    required String metatubeProvider,
+    required bool metatubeFallback,
+    required bool nfoTranslateEnable,
+    required bool nfoTranslateTitleEnable,
+    required String nfoTranslateApiUrl,
+    required String nfoTranslateApiKey,
     bool showLoading = false,
   }) {
     return apiPost<Map<String, dynamic>>(
       '/api/video/setTmdbConfig',
       body: {
+        'scrapeSource': scrapeSource,
         'accessToken': accessToken,
         'proxyEnable': proxyEnable ? 1 : 0,
         'proxyUrl': proxyUrl,
         'language': language,
+        'metatubeBaseUrl': metatubeBaseUrl,
+        'metatubeToken': metatubeToken,
+        'metatubeProvider': metatubeProvider,
+        'metatubeFallback': metatubeFallback ? 1 : 0,
+        'nfoTranslateEnable': nfoTranslateEnable ? 1 : 0,
+        'nfoTranslateTitleEnable': nfoTranslateTitleEnable ? 1 : 0,
+        'nfoTranslateTargetLanguage': 'zh-CN',
+        'nfoTranslateApiUrl': nfoTranslateApiUrl,
+        'nfoTranslateApiKey': nfoTranslateApiKey,
       },
       showLoading: showLoading,
     );
@@ -62,9 +81,7 @@ class VideoTmdbSettingsApiService extends BaseApiService {
   }) {
     return apiPost<Map<String, dynamic>>(
       '/api/video/setSubtitleConfig',
-      body: {
-        'preExtractEnable': preExtractEnable ? 1 : 0,
-      },
+      body: {'preExtractEnable': preExtractEnable ? 1 : 0},
       showLoading: showLoading,
     );
   }
@@ -76,10 +93,7 @@ class VideoTmdbSettingsApiService extends BaseApiService {
   }) {
     return apiPost<Map<String, dynamic>>(
       '/api/video/setTranscodeConfig',
-      body: {
-        'tempDir': tempDir,
-        'preferredHwDecoder': preferredHwDecoder,
-      },
+      body: {'tempDir': tempDir, 'preferredHwDecoder': preferredHwDecoder},
       showLoading: showLoading,
     );
   }

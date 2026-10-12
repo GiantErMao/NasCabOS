@@ -6,6 +6,8 @@ const dbUtil = require('../../../../db/dbUtil');
 const knexUtil = require('../../../../db/knexUtil');
 const nascabAccountUtil = require('../../service/utils/nascabAccountUtil');
 const { TmdbClient } = require('../../../../workers/videoIndex/nfoFetchWorker/tmdbClient');
+const { MetaTubeClient, DEFAULT_METATUBE_BASE_URL, normalizeMetaTubeBaseUrl } = require('../../../../workers/videoIndex/nfoFetchWorker/metatubeClient');
+const { normalizeTranslateApiUrl, normalizeTranslateTargetLanguage } = require('../../../../workers/videoIndex/nfoFetchWorker/metadataTranslateClient');
 const config = require('../../../../config/config');
 const {
   buildAvailableHwAccelList,
@@ -196,6 +198,10 @@ function _normalizeApiUrlString(apiUrlStr) {
   return `https://${raw}`;
 }
 
+function _normalizeScrapeSource(v) {
+  return String(v || '').trim() === 'metatube' ? 'metatube' : 'tmdb';
+}
+
 async function _resolveTmdbApiUrl() {
   const knex = knexUtil.getInstance(dbUtil.DB_PATHS.MAIN_DB);
   const fromDb = await nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'tmdbApiUrl');
@@ -254,6 +260,24 @@ async function _testTmdbConnection({ accessToken, proxyUrl }) {
   }
 }
 
+async function _testMetaTubeConnection({ baseUrl, token }) {
+  const normalized = normalizeMetaTubeBaseUrl(baseUrl);
+  if (!normalized) return { ok: false, reason: 'invalid_url' };
+  const client = new MetaTubeClient({ baseUrl: normalized, token });
+  try {
+    await client.getProviders();
+    return { ok: true, reason: '' };
+  } catch (e) {
+    const statusCode = e && e.statusCode ? Number(e.statusCode) : 0;
+    let reason = statusCode ? `HTTP ${statusCode}` : '';
+    if (e && e.code) reason = `${reason} ${String(e.code)}`.trim();
+    if (!reason && e && e.message) reason = String(e.message);
+    reason = reason.trim();
+    if (reason.length > 200) reason = reason.slice(0, 200);
+    return { ok: false, reason };
+  }
+}
+
 async function _loadTranscodeHwAccelState() {
   await _repairTranscodeHwAccelConfigIfNeeded();
   const [availableRaw, preferredRaw, selectedRaw] = await Promise.all([
@@ -281,24 +305,62 @@ class VideoConfigController {
       const knex = knexUtil.getInstance(dbUtil.DB_PATHS.MAIN_DB);
       // 远程默认 token（加密存储）不应返回给前端展示/回填
       // 兼容旧版本：若 token 曾被远程加密写入到 tmdbApiToken，也一并隐藏
-      const [tokenRaw, tokenDec, proxyEnable, proxyUrl, language] = await Promise.all([
+      const [
+        tokenRaw,
+        tokenDec,
+        proxyEnable,
+        proxyUrl,
+        language,
+        scrapeSourceRaw,
+        metatubeBaseUrl,
+        metatubeToken,
+        metatubeProvider,
+        metatubeFallback,
+        nfoTranslateEnable,
+        nfoTranslateTitleEnable,
+        nfoTranslateTargetLanguage,
+        nfoTranslateApiUrl,
+        nfoTranslateApiKey,
+      ] = await Promise.all([
         tableConfig.getConfigByKey('tmdbApiToken'),
         nascabAccountUtil.getDecryptedConfigValue(knex, tableConfig, 'tmdbApiToken'),
         tableConfig.getConfigByKey('tmdbProxyEnable'),
         tableConfig.getConfigByKey('tmdbProxyUrl'),
         tableConfig.getConfigByKey('tmdbLanguage'),
+        tableConfig.getConfigByKey('videoScrapeSource'),
+        tableConfig.getConfigByKey('metatubeBaseUrl'),
+        tableConfig.getConfigByKey('metatubeToken'),
+        tableConfig.getConfigByKey('metatubeProvider'),
+        tableConfig.getConfigByKey('metatubeFallback'),
+        tableConfig.getConfigByKey('nfoTranslateEnable'),
+        tableConfig.getConfigByKey('nfoTranslateTitleEnable'),
+        tableConfig.getConfigByKey('nfoTranslateTargetLanguage'),
+        tableConfig.getConfigByKey('nfoTranslateApiUrl'),
+        tableConfig.getConfigByKey('nfoTranslateApiKey'),
       ]);
       const isEncryptedToken = tokenRaw ? String(tokenRaw).trim().startsWith('enc.') : false;
       const token = isEncryptedToken ? '' : tokenDec ? String(tokenDec) : '';
+      const isEncryptedMetaTubeToken = metatubeToken ? String(metatubeToken).trim().startsWith('enc.') : false;
+      const isEncryptedTranslateApiKey = nfoTranslateApiKey ? String(nfoTranslateApiKey).trim().startsWith('enc.') : false;
 
       return ResponseUtil.success(
         req,
         res,
         {
+          scrapeSource: _normalizeScrapeSource(scrapeSourceRaw),
           accessToken: token ? String(token) : '',
           proxyEnable: proxyEnable === '1' || proxyEnable === 1 ? 1 : 0,
           proxyUrl: proxyUrl ? String(proxyUrl) : '',
           language: language ? String(language) : '',
+          metatubeBaseUrl: normalizeMetaTubeBaseUrl(metatubeBaseUrl) || normalizeMetaTubeBaseUrl(DEFAULT_METATUBE_BASE_URL),
+          metatubeToken: isEncryptedMetaTubeToken ? '' : metatubeToken ? String(metatubeToken) : '',
+          metatubeProvider: metatubeProvider ? String(metatubeProvider) : '',
+          metatubeFallback: metatubeFallback === '0' || metatubeFallback === 0 ? 0 : 1,
+          nfoTranslateEnable: nfoTranslateEnable === '1' || nfoTranslateEnable === 1 ? 1 : 0,
+          nfoTranslateTitleEnable: nfoTranslateTitleEnable === '1' || nfoTranslateTitleEnable === 1 ? 1 : 0,
+          nfoTranslateTargetLanguage: normalizeTranslateTargetLanguage(nfoTranslateTargetLanguage),
+          nfoTranslateApiUrl: normalizeTranslateApiUrl(nfoTranslateApiUrl),
+          nfoTranslateApiKey: isEncryptedTranslateApiKey ? '' : nfoTranslateApiKey ? String(nfoTranslateApiKey) : '',
         },
         'common.SUCCESS',
         200
@@ -346,8 +408,30 @@ class VideoConfigController {
       const proxyUrlRaw = _parseText(body.proxyUrl ?? body.tmdbProxyUrl ?? body.proxy_url);
       const languageRaw = _parseText(body.language ?? body.tmdbLanguage ?? body.tmdb_language);
       const language = _normalizeToTmdbLanguage(languageRaw);
+      const scrapeSource = _normalizeScrapeSource(body.scrapeSource ?? body.videoScrapeSource ?? body.scrape_source);
+      const metatubeBaseUrlRaw = _parseText(body.metatubeBaseUrl ?? body.metaTubeBaseUrl ?? body.metatube_base_url);
+      const metatubeBaseUrl = normalizeMetaTubeBaseUrl(metatubeBaseUrlRaw);
+      const metatubeToken = _parseText(body.metatubeToken ?? body.metaTubeToken ?? body.metatube_token);
+      const metatubeProvider = _parseText(body.metatubeProvider ?? body.metaTubeProvider ?? body.metatube_provider);
+      const metatubeFallback = _parseBoolTo01(body.metatubeFallback ?? body.metaTubeFallback ?? body.metatube_fallback ?? 1);
+      const nfoTranslateEnable = _parseBoolTo01(body.nfoTranslateEnable ?? body.nfo_translate_enable ?? 0);
+      const nfoTranslateTitleEnable = _parseBoolTo01(body.nfoTranslateTitleEnable ?? body.nfo_translate_title_enable ?? 0);
+      const nfoTranslateTargetLanguage = normalizeTranslateTargetLanguage(body.nfoTranslateTargetLanguage ?? body.nfo_translate_target_language ?? 'zh-CN');
+      const nfoTranslateApiUrlRaw = _parseText(body.nfoTranslateApiUrl ?? body.nfo_translate_api_url);
+      const nfoTranslateApiUrl = normalizeTranslateApiUrl(nfoTranslateApiUrlRaw);
+      const nfoTranslateApiKey = _parseText(body.nfoTranslateApiKey ?? body.nfo_translate_api_key);
+      const existingNfoTranslateApiKey = await tableConfig.getConfigByKey('nfoTranslateApiKey');
+      const nfoTranslateApiKeyToSave =
+        nfoTranslateApiKey ||
+        (nfoTranslateApiUrl && existingNfoTranslateApiKey && String(existingNfoTranslateApiKey).trim().startsWith('enc.') ? existingNfoTranslateApiKey : '');
 
       if (languageRaw && !language) {
+        return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
+      }
+      if (scrapeSource === 'metatube' && !metatubeBaseUrl) {
+        return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
+      }
+      if (nfoTranslateApiUrlRaw && !nfoTranslateApiUrl) {
         return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
       }
 
@@ -372,18 +456,59 @@ class VideoConfigController {
           return ResponseUtil.error(req, res, 'video.TMDB_PROXY_TEST_FAILED', 400);
         }
       }
+      if (scrapeSource === 'metatube') {
+        const test = await _testMetaTubeConnection({ baseUrl: metatubeBaseUrl, token: metatubeToken });
+        if (!test || !test.ok) {
+          const reason = test && test.reason ? String(test.reason) : '';
+          if (reason) {
+            return ResponseUtil.errorWithArgs(req, res, 'video.METATUBE_TEST_FAILED_DETAIL', [reason], 400);
+          }
+          return ResponseUtil.error(req, res, 'video.METATUBE_TEST_FAILED', 400);
+        }
+      }
 
       const savePairs = [
+        tableConfig.setConfigByKey('videoScrapeSource', scrapeSource),
         tableConfig.setConfigByKey('tmdbApiToken', accessToken),
         tableConfig.setConfigByKey('tmdbProxyEnable', String(proxyEnable)),
         tableConfig.setConfigByKey('tmdbProxyUrl', proxyEnable === 1 ? proxyUrl : ''),
         tableConfig.setConfigByKey('tmdbLanguage', language),
+        tableConfig.setConfigByKey('metatubeBaseUrl', metatubeBaseUrl),
+        tableConfig.setConfigByKey('metatubeToken', metatubeToken),
+        tableConfig.setConfigByKey('metatubeProvider', metatubeProvider),
+        tableConfig.setConfigByKey('metatubeFallback', String(metatubeFallback)),
+        tableConfig.setConfigByKey('nfoTranslateEnable', String(nfoTranslateEnable)),
+        tableConfig.setConfigByKey('nfoTranslateTitleEnable', String(nfoTranslateTitleEnable)),
+        tableConfig.setConfigByKey('nfoTranslateTargetLanguage', nfoTranslateTargetLanguage),
+        tableConfig.setConfigByKey('nfoTranslateApiUrl', nfoTranslateApiUrl),
+        tableConfig.setConfigByKey('nfoTranslateApiKey', nfoTranslateApiKeyToSave),
       ];
       const results = await Promise.all(savePairs);
       const allOk = results.every(Boolean);
       if (!allOk) return ResponseUtil.error(req, res, 'common.ERROR', 500);
 
-      return ResponseUtil.success(req, res, { accessToken, proxyEnable, proxyUrl: proxyEnable === 1 ? proxyUrl : '', language }, 'video.TMDB_CONFIG_SAVED', 200);
+      return ResponseUtil.success(
+        req,
+        res,
+        {
+          scrapeSource,
+          accessToken,
+          proxyEnable,
+          proxyUrl: proxyEnable === 1 ? proxyUrl : '',
+          language,
+          metatubeBaseUrl,
+          metatubeToken,
+          metatubeProvider,
+          metatubeFallback,
+          nfoTranslateEnable,
+          nfoTranslateTitleEnable,
+          nfoTranslateTargetLanguage,
+          nfoTranslateApiUrl,
+          nfoTranslateApiKey,
+        },
+        'video.TMDB_CONFIG_SAVED',
+        200
+      );
     } catch (_) {
       return ResponseUtil.error(req, res, 'common.ERROR', 500);
     }

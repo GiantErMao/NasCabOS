@@ -103,6 +103,60 @@ ${prefix}${name}
   return m3u8;
 }
 
+function _parseTranscodeSegmentIndex(name) {
+  const m = String(name || '').match(/^segment_(\d+)\.ts$/i);
+  if (!m) return -1;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : -1;
+}
+
+function _safeJsonParseObject(raw) {
+  try {
+    const obj = JSON.parse(String(raw || ''));
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function _probeTranscodeSegment(filePath) {
+  try {
+    const ret = spawnSync(
+      ffprobePath.path,
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=codec_name,width,height,pix_fmt,avg_frame_rate,r_frame_rate',
+        '-show_entries',
+        'format=duration,bit_rate',
+        '-of',
+        'json',
+        filePath,
+      ],
+      { encoding: 'utf8', timeout: 3000 }
+    );
+    if (ret.status !== 0 || !ret.stdout) return {};
+    const parsed = JSON.parse(ret.stdout);
+    const stream = parsed && Array.isArray(parsed.streams) ? parsed.streams[0] || {} : {};
+    const format = parsed && parsed.format ? parsed.format : {};
+    return {
+      codec: stream.codec_name || '',
+      width: Number(stream.width) || 0,
+      height: Number(stream.height) || 0,
+      pixFmt: stream.pix_fmt || '',
+      avgFrameRate: stream.avg_frame_rate || '',
+      rFrameRate: stream.r_frame_rate || '',
+      duration: Number(format.duration) || 0,
+      bitRate: Number(format.bit_rate) || 0,
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
 function _normalizeText(v) {
   if (v === undefined || v === null) return '';
   return String(v).trim();
@@ -927,6 +981,101 @@ class VideoPlayerController {
       return res.sendFile(filePath);
     } catch (e) {
       res.status(500).send(e.message);
+    }
+  }
+
+  async getTranscodeInfo(req, res) {
+    try {
+      const playId = _normalizeText(req.query && req.query.playId);
+      if (!playId) {
+        return ResponseUtil.error(req, res, 'videoPlayer.INVALID_PARAMS', 400);
+      }
+
+      const session = await tableVideoTranscodeSession.getByPlayId(playId, req.dbVideo);
+      if (!session) {
+        return ResponseUtil.success(req, res, {
+          playId,
+          exists: false,
+        });
+      }
+
+      const filePath = _normalizeText(session.file_path);
+      if (!filePath) return ResponseUtil.forbidden(req, res);
+      const ok = await hasPermission(req.dbMain, req.user, ['download', 'view'], filePath, 'file').catch(() => false);
+      if (!ok) return ResponseUtil.forbidden(req, res);
+
+      const options = _safeJsonParseObject(session.options_json);
+      const outDir = await videoPlayerService.getTranscodeOutDir(playId);
+      let files = [];
+      try {
+        files = await fs.promises.readdir(outDir);
+      } catch (_) {
+        files = [];
+      }
+
+      const segments = [];
+      for (const name of files) {
+        const idx = _parseTranscodeSegmentIndex(name);
+        if (idx < 0) continue;
+        const p = path.join(outDir, name);
+        try {
+          const st = await fs.promises.stat(p);
+          if (!st.isFile() || st.size <= 0) continue;
+          segments.push({
+            index: idx,
+            name,
+            size: st.size,
+            mtimeMs: Math.floor(st.mtimeMs || 0),
+          });
+        } catch (_) {}
+      }
+      segments.sort((a, b) => a.index - b.index);
+
+      const latest = segments.length > 0 ? segments[segments.length - 1] : null;
+      const latestPath = latest ? path.join(outDir, latest.name) : '';
+      const probe = latestPath ? _probeTranscodeSegment(latestPath) : {};
+      const segmentDuration = Number(probe.duration) > 0 ? Number(probe.duration) : 2;
+      const estimatedBitRate = latest && segmentDuration > 0 ? Math.round((latest.size * 8) / segmentDuration) : 0;
+
+      return ResponseUtil.success(req, res, {
+        playId,
+        exists: true,
+        session: {
+          isRunning: Number(session.is_running) === 1,
+          baseSeekSeconds: Number(session.base_seek_seconds) || 0,
+          lastGetHlsTime: Number(session.last_get_hls_time) || 0,
+          lastGetHlsFilename: session.last_get_hls_filename || '',
+          updateTime: Number(session.update_time) || 0,
+          createTime: Number(session.create_time) || 0,
+        },
+        request: {
+          width: options.width || null,
+          resolution: options.resolution || '',
+          bitrate: options.bitrate || '',
+          audioIndex: options.audioIndex !== undefined ? options.audioIndex : null,
+          subtitleIndex: options.subtitleIndex !== undefined ? options.subtitleIndex : null,
+          subtitleBurn: options.subtitleBurn === true,
+          seek: options.seek !== undefined ? Number(options.seek) || 0 : 0,
+        },
+        output: {
+          codec: probe.codec || '',
+          width: probe.width || 0,
+          height: probe.height || 0,
+          pixFmt: probe.pixFmt || '',
+          avgFrameRate: probe.avgFrameRate || '',
+          rFrameRate: probe.rFrameRate || '',
+          bitRate: probe.bitRate || estimatedBitRate || 0,
+        },
+        hls: {
+          dirExists: files.length > 0,
+          segmentCount: segments.length,
+          latestSegment: latest,
+        },
+      });
+    } catch (e) {
+      return ResponseUtil.error(req, res, 'common.ERROR', 500, {
+        error: e && e.message ? e.message : String(e),
+      });
     }
   }
 

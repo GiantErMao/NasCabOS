@@ -3,6 +3,7 @@ const fs = require('fs');
 const MusicSourceService = require('../source/musicSourceService');
 const { intersectPaths, parsePathListText } = require('../../photo/timeline/photoPathQueryUtil');
 const userUtil = require('../../../../utils/userUtil');
+const { selectNaturalPageIdsFromQuery, selectNaturalPageIdsFromRows, sortRowsByPageIds } = require('../../../../utils/naturalSortUtil');
 
 function _escapeLikeValue(input) {
   return String(input || '')
@@ -69,6 +70,7 @@ function _normalizeSortBy(input) {
   const v = String(input || '')
     .trim()
     .toLowerCase();
+  if (v === 'filename' || v === 'file_name') return 'filename';
   if (v === 'title' || v === 'name' || v === 'artist' || v === 'album' || v === 'year' || v === 'duration' || v === 'ctime' || v === 'mtime' || v === 'favorite_time') return v;
   return 'mtime';
 }
@@ -390,18 +392,39 @@ class MusicListService {
       )
     );
 
+    const naturalSortFields = {
+      filename: ['filename'],
+      title: ['title', 'filename'],
+      name: ['title', 'filename'],
+      artist: ['artist'],
+      album: ['album'],
+      year: ['year'],
+    };
+    const naturalValueFields = isHistoryList ? null : naturalSortFields[sortBy];
+    let naturalPageIds = null;
+    if (naturalValueFields) {
+      const candidateQuery = baseQuery
+        .clone()
+        .clearSelect()
+        .clearOrder()
+        .distinct('m.id', 'm.filename', 'm.title', 'm.artist', 'm.album', 'm.year');
+      naturalPageIds = await selectNaturalPageIdsFromQuery(candidateQuery, {
+        sortOrder,
+        offset,
+        limit: safeLimit,
+        valueFields: naturalValueFields,
+      });
+      if (naturalPageIds.length === 0) {
+        query.whereRaw('1 = 0');
+      } else {
+        query.whereIn('m.id', naturalPageIds);
+      }
+    }
+
     if (isHistoryList) {
       query.orderBy('h.last_listen_at', 'desc');
-    } else if (sortBy === 'filename' || sortBy === 'file_name') {
-      query.orderByRaw(`lower(m.filename) ${sortOrder}`);
-    } else if (sortBy === 'title' || sortBy === 'name') {
-      query.orderByRaw(`lower(case when m.title is not null and trim(m.title) != '' then m.title else m.filename end) ${sortOrder}`);
-    } else if (sortBy === 'artist') {
-      query.orderByRaw(`lower(case when m.artist is not null and trim(m.artist) != '' then m.artist else '' end) ${sortOrder}`);
-    } else if (sortBy === 'album') {
-      query.orderByRaw(`lower(case when m.album is not null and trim(m.album) != '' then m.album else '' end) ${sortOrder}`);
-    } else if (sortBy === 'year') {
-      query.orderByRaw(`lower(case when m.year is not null and trim(m.year) != '' then m.year else '' end) ${sortOrder}`);
+    } else if (naturalPageIds !== null) {
+      // The selected page is restored to its natural order after the full rows are loaded.
     } else if (sortBy === 'favorite_time' && isFavoriteList) {
       query.orderBy('fav.create_time', sortOrder);
       query.orderBy('fav.id', 'desc');
@@ -412,12 +435,15 @@ class MusicListService {
     } else {
       query.orderBy('m.mtime', sortOrder);
     }
-    query.orderBy('m.id', 'desc');
+    if (naturalPageIds === null) {
+      query.orderBy('m.id', 'desc');
+      query.limit(safeLimit).offset(offset);
+    }
 
-    const rows = await query
-      .limit(safeLimit)
-      .offset(offset)
-      .catch(() => []);
+    let rows = await query.catch(() => []);
+    if (naturalPageIds !== null && rows.length > 1) {
+      rows = sortRowsByPageIds(rows, naturalPageIds);
+    }
     const items = (rows || []).map(r => _normalizeListRow(r));
     if (isFavoriteList) {
       for (const item of items) {
@@ -568,23 +594,35 @@ class MusicListService {
       .catch(() => null);
     const total = Math.max(0, Number((countRow && (countRow.cnt ?? countRow['count(`k`.`key`)'] ?? countRow['count(*)'])) || 0) || 0);
 
-    const groups = await baseQuery
+    const groupQuery = baseQuery
       .clone()
       .clearSelect()
       .select('k.key as name')
       .countDistinct({ cnt: 'k.index_id' })
-      .groupBy('k.key')
-      .modify(qb => {
-        if (sortBy === 'count') {
-          qb.orderBy('cnt', sortOrder);
-          qb.orderByRaw(`lower(k.key) asc`);
-          return;
-        }
-        qb.orderByRaw(`lower(k.key) ${sortOrder}`);
-      })
-      .limit(safeLimit)
-      .offset(offset)
-      .catch(() => []);
+      .groupBy('k.key');
+
+    let groups;
+    if (sortBy === 'count') {
+      groups = await groupQuery
+        .orderBy('cnt', sortOrder)
+        .orderByRaw('lower(k.key) asc')
+        .limit(safeLimit)
+        .offset(offset)
+        .catch(() => []);
+    } else {
+      const orderedGroupIds = await selectNaturalPageIdsFromRows(groupQuery.stream(), {
+        sortOrder,
+        offset,
+        limit: safeLimit,
+        valueFields: ['name'],
+        idField: 'name',
+      });
+      groups = await groupQuery
+        .whereIn('k.key', orderedGroupIds)
+        .catch(() => []);
+      const rank = new Map(orderedGroupIds.map((name, index) => [String(name), index]));
+      groups.sort((a, b) => (rank.get(String(a.name)) ?? Number.MAX_SAFE_INTEGER) - (rank.get(String(b.name)) ?? Number.MAX_SAFE_INTEGER));
+    }
 
     const items = [];
     for (const row of groups || []) {

@@ -350,9 +350,7 @@ class _AppVideoRecommendSwiperState extends State<_AppVideoRecommendSwiper> {
             itemBuilder: (context, i) {
               final item = widget.items[i];
               final imageUrl = VideoUtils.getFanartUrl(item, size: 1000);
-              final title = item.nfoName.isNotEmpty
-                  ? item.nfoName
-                  : item.filename;
+              final title = resolveVideoItemDisplayTitle(item);
               final sub = item.nfoYear > 0 ? item.nfoYear.toString() : '';
               final meta = buildVideoHomeMeta(item);
               final rating = item.nfoScore;

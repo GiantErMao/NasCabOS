@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import '../../../../../core/api/api_controller.dart';
 import '../../controller/video_detail_controller.dart';
 import '../../../../base/components/custom_extended_image.dart';
+import '../../../base/video_utils/video_item_utils.dart';
 import '../../../base/video_utils/video_utils.dart';
 import '../../../video_main/controller/video_main_controller.dart';
 
@@ -20,9 +21,7 @@ class VideoDetailTopSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final m = ctrl.item!;
-    final title = (m['nfo_name']?.toString().trim().isNotEmpty ?? false)
-        ? m['nfo_name'].toString()
-        : (m['filename']?.toString() ?? '');
+    final title = resolveVideoMapDisplayTitle(m as Map);
     final score = (m['nfo_score'] as num?)?.toDouble() ?? 0;
     final year = (m['nfo_year'] as num?)?.toInt() ?? 0;
     final regions = (m['nfo_regions']?.toString() ?? '').trim();

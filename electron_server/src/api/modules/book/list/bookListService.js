@@ -1,15 +1,15 @@
 const path = require('path');
 const fs = require('fs');
 const userUtil = require('../../../../utils/userUtil');
+const { selectNaturalPageIdsFromQuery, sortRowsByPageIds } = require('../../../../utils/naturalSortUtil');
 const BookSourceService = require('../source/bookSourceService');
 const { intersectPaths, parsePathListText } = require('../../photo/timeline/photoPathQueryUtil');
-
-function _escapeLikeValue(input) {
-  return String(input || '')
-    .replaceAll('\\', '\\\\')
-    .replaceAll('%', '\\%')
-    .replaceAll('_', '\\_');
-}
+const {
+  applyLetterFilter,
+  applyTextLikeFilter,
+  buildOrderedLikePattern,
+  normalizeLetterFilter,
+} = require('./bookSearchUtil');
 
 function _applyBookIndexPathPrefixFilter(query, paths) {
   const list = Array.isArray(paths) ? paths.map(p => String(p || '').trim()).filter(Boolean) : [];
@@ -42,6 +42,30 @@ function _applyBookIndexPathPrefixFilter(query, paths) {
         this.where('b.is_file', 0).andWhere('b.path', pair.parent).andWhere('b.filename', pair.name);
       });
     }
+  });
+}
+
+function _applyBookMatchFilter(query, { knex, searchPattern, letterFilter, includeSeriesChildren }) {
+  if (!searchPattern && !letterFilter) return;
+
+  query.andWhere(matchBuilder => {
+    matchBuilder.where(directBuilder => {
+      applyTextLikeFilter(directBuilder, { alias: 'b', pattern: searchPattern });
+      applyLetterFilter(directBuilder, { alias: 'b', letter: letterFilter });
+    });
+
+    if (!includeSeriesChildren) return;
+    matchBuilder.orWhereExists(
+      knex('book_index as child')
+        .select(knex.raw('1'))
+        .whereRaw("b.show_type = 'series'")
+        .where('child.show_type', 'subbook')
+        .whereRaw('child.path = (b.path || ? || b.filename)', [path.sep])
+        .where(childBuilder => {
+          applyTextLikeFilter(childBuilder, { alias: 'child', pattern: searchPattern });
+          applyLetterFilter(childBuilder, { alias: 'child', letter: letterFilter });
+        })
+    );
   });
 }
 
@@ -181,7 +205,8 @@ class BookListService {
     const safeLimit = Math.min(200, Math.max(1, Number(params.page_size ?? params.pageSize ?? 30) || 30));
     const offset = (safePage - 1) * safeLimit;
 
-    const search = params.search === undefined || params.search === null ? '' : String(params.search).trim();
+    const searchPattern = buildOrderedLikePattern(params.search);
+    const letterFilter = normalizeLetterFilter(params.letter_filter ?? params.letterFilter);
     const typeList = _normalizeTypeList(params.type ?? params.types);
     const sortBy = _normalizeSortBy(params.sort_by ?? params.sortBy);
     const sortOrder = _normalizeSortOrder(params.sort_order ?? params.sortOrder);
@@ -303,29 +328,19 @@ class BookListService {
       _applyBookIndexPathPrefixFilter(baseQuery, finalPaths);
     }
 
-    if (search) {
-      const chars = Array.from(search);
-      const first = chars[0] || '';
-      if (chars.length === 1 && (first === '#' || /[a-z]/i.test(first))) {
-        const fl = first === '#' ? '#' : first.toUpperCase();
-        baseQuery.andWhere(builder => {
-          builder.where('b.title_fl', fl).orWhere('b.filename_fl', fl);
-        });
-      } else {
-        const escaped = _escapeLikeValue(search);
-        baseQuery.andWhere(builder => {
-          builder.whereRaw("b.title LIKE ? ESCAPE '\\'", [`%${escaped}%`]).orWhereRaw("b.filename LIKE ? ESCAPE '\\'", [`%${escaped}%`]);
-        });
-      }
-    }
+    _applyBookMatchFilter(baseQuery, {
+      knex,
+      searchPattern,
+      letterFilter,
+      includeSeriesChildren: !seriesIndexBasePath,
+    });
 
     const countRow = await baseQuery
       .clone()
       .clearSelect()
       .clearOrder()
       .countDistinct({ cnt: 'b.id' })
-      .first()
-      .catch(() => null);
+      .first();
     const total = Math.max(0, Number((countRow && (countRow.cnt ?? countRow['count(`b`.`id`)'] ?? countRow['count(*)'])) || 0) || 0);
 
     const query = baseQuery
@@ -369,13 +384,29 @@ class BookListService {
       )
     );
 
+    let naturalPageIds = null;
     if (sortBy === 'view_time') {
       query.orderBy('b.view_time', sortOrder);
     } else if (sortBy === 'favorite_time' && isFavoriteList) {
       query.orderBy('fav.create_time', sortOrder);
       query.orderBy('fav.id', 'desc');
     } else if (sortBy === 'name' || sortBy === 'title') {
-      query.orderByRaw(`lower(case when b.title is not null and trim(b.title) != '' then b.title else b.filename end) ${sortOrder}`);
+      const nameQuery = baseQuery
+        .clone()
+        .clearSelect()
+        .clearOrder()
+        .distinct('b.id', 'b.title', 'b.filename');
+      naturalPageIds = await selectNaturalPageIdsFromQuery(nameQuery, {
+        sortOrder,
+        offset,
+        limit: safeLimit,
+        valueFields: ['title', 'filename'],
+      });
+      if (naturalPageIds.length === 0) {
+        query.whereRaw('1 = 0');
+      } else {
+        query.whereIn('b.id', naturalPageIds);
+      }
     } else if (sortBy === 'artist') {
       query.orderByRaw(`lower(case when b.artist is not null and trim(b.artist) != '' then b.artist else '' end) ${sortOrder}`);
     } else if (sortBy === 'year') {
@@ -383,12 +414,15 @@ class BookListService {
     } else {
       query.orderBy('b.create_time', sortOrder);
     }
-    query.orderBy('b.id', 'desc');
+    if (naturalPageIds === null) {
+      query.orderBy('b.id', 'desc');
+      query.limit(safeLimit).offset(offset);
+    }
 
-    const rows = await query
-      .limit(safeLimit)
-      .offset(offset)
-      .catch(() => []);
+    let rows = await query;
+    if (naturalPageIds !== null && rows.length > 1) {
+      rows = sortRowsByPageIds(rows, naturalPageIds);
+    }
     const items = (rows || []).map(r => _normalizeListRow(r));
     if (isFavoriteList) {
       for (const item of items) {

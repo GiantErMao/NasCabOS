@@ -6,6 +6,14 @@ analyzer:
     experimental_member_use: ignore
     package_names: ignore
     unused_element: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   rules:

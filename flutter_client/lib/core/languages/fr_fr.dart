@@ -81,6 +81,8 @@ class FrFr extends Translations {
 
       'txt_reader_settings': 'Paramètres de lecture',
       'txt_reader_show_progress': 'Afficher la barre de progression',
+      'txt_reader_mode_paged': 'Paginé',
+      'txt_reader_mode_continuous': 'Défilement continu',
       'txt_reader_font_size': 'Taille de police',
       'txt_reader_text_color': 'Couleur du texte',
       'txt_reader_background': 'Arrière-plan',
@@ -1577,8 +1579,7 @@ class FrFr extends Translations {
           'Réduire la taille d\'aperçu peut économiser de la bande passante et améliorer la vitesse de chargement sur les réseaux externes.',
       'photo_preview_size_origin': 'Taille originale',
       'photo_preview_size_long_side': 'Côté long @size',
-      'photo_preview_wifi_original':
-          'Afficher les images originales en WiFi',
+      'photo_preview_wifi_original': 'Afficher les images originales en WiFi',
       'photo_preview_wifi_original_subtitle':
           'Applicable uniquement à cet appareil',
       'smart_date_album': 'Album de date intelligent',
@@ -1599,8 +1600,10 @@ class FrFr extends Translations {
       'photo_source_scan_now': 'Analyser maintenant',
       'photo_source_scan_all': 'Tout analyser',
       'photo_source_reset_thumbnails': 'Reset Thumbnails',
-      'photo_source_reset_thumbnails_tooltip': 'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
-      'photo_source_reset_thumbnails_confirm': 'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
+      'photo_source_reset_thumbnails_tooltip':
+          'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
+      'photo_source_reset_thumbnails_confirm':
+          'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
       'photo_source_scan_when_start': 'Analyser au démarrage',
       'photo_source_scan_when_change': 'Analyser lors des modifications',
       'photo_source_scan_interval': 'Analyse intervalle',
@@ -2918,6 +2921,46 @@ class FrFr extends Translations {
           'Impossible de demarrer Docker. Verifiez l etat du service ou les permissions de l utilisateur actuel.',
       'docker_stop_failed':
           'Impossible d arreter Docker. Verifiez l etat du service ou les permissions de l utilisateur actuel.',
+      'txt_speech_title': 'Read Aloud',
+      'txt_speech_from_current': 'Read from Current Position',
+      'txt_speech_from_here': 'Read from Here',
+      'txt_speech_play': 'Resume',
+      'txt_speech_pause': 'Pause',
+      'txt_speech_stop': 'Stop',
+      'txt_speech_sync_reading': 'Go to Reading Position',
+      'txt_speech_previous': 'Previous Segment',
+      'txt_speech_next': 'Next Segment',
+      'txt_speech_rate': 'Speed',
+      'txt_speech_voice': 'Voice',
+      'txt_speech_no_voices': 'No system voices available',
+      'txt_speech_system_default': 'System Default',
+      'txt_speech_reading': 'Reading aloud',
+      'txt_speech_failed': 'Read aloud failed: @error',
+      'txt_speech_web_limit':
+          'Reading may pause when the browser is in background',
+      'txt_speech_engine': 'Voice engine',
+      'txt_speech_engine_system': 'System',
+      'txt_speech_engine_local': 'Local neural',
+      'txt_speech_source_system': 'System',
+      'txt_speech_source_local': 'Local',
+      'txt_speech_switch_to_system': 'Switch to system voice',
+      'txt_speech_model_not_installed': 'Local model is not installed',
+      'txt_speech_model_download_size': 'Download about 129 MB',
+      'txt_speech_model_download': 'Download',
+      'txt_speech_model_cancel': 'Cancel download',
+      'txt_speech_model_verifying': 'Verifying model',
+      'txt_speech_model_extracting': 'Installing model',
+      'txt_speech_model_installed_size': 'Installed - @size',
+      'txt_speech_model_delete': 'Delete model',
+      'txt_speech_model_delete_confirm':
+          'Delete the local neural voice model from this device?',
+      'txt_speech_model_failed': 'Model installation failed',
+      'txt_speech_model_retry': 'Retry',
+      'txt_speech_license_title': 'Non-commercial model license',
+      'txt_speech_license_body':
+          'For non-commercial internal evaluation only. Do not enable in distributed or commercial builds.',
+      'txt_speech_license_source': 'License source',
+      'txt_speech_license_accept': 'Agree and download',
     },
   };
 }

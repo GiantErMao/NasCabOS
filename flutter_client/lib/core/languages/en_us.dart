@@ -77,6 +77,8 @@ class EnUs extends Translations {
 
       'txt_reader_settings': 'Reader settings',
       'txt_reader_show_progress': 'Show progress bar',
+      'txt_reader_mode_paged': 'Paged',
+      'txt_reader_mode_continuous': 'Continuous',
       'txt_reader_font_size': 'Font size',
       'txt_reader_text_color': 'Text color',
       'txt_reader_background': 'Background',
@@ -1537,8 +1539,7 @@ class EnUs extends Translations {
       'photo_preview_size_origin': 'Original size',
       'photo_preview_size_long_side': 'Long side @size',
       'photo_preview_wifi_original': 'Browse original images over WiFi',
-      'photo_preview_wifi_original_subtitle':
-          'Only effective on this device',
+      'photo_preview_wifi_original_subtitle': 'Only effective on this device',
       'smart_date_album': 'Smart Date Album',
       'condition_album': 'Condition Album',
 
@@ -1557,8 +1558,10 @@ class EnUs extends Translations {
       'photo_source_scan_now': 'Scan Now',
       'photo_source_scan_all': 'Scan All',
       'photo_source_reset_thumbnails': 'Reset Thumbnails',
-      'photo_source_reset_thumbnails_tooltip': 'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
-      'photo_source_reset_thumbnails_confirm': 'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
+      'photo_source_reset_thumbnails_tooltip':
+          'Attempt to regenerate thumbnails for all photos. Existing thumbnails will be skipped automatically.',
+      'photo_source_reset_thumbnails_confirm':
+          'This will regenerate thumbnails for all photo and video source directories. Existing thumbnails will be skipped. This process runs in the background and may take a long time. Are you sure you want to continue?',
       'photo_source_scan_when_start': 'Scan on start',
       'photo_source_scan_when_change': 'Scan on changes',
       'photo_source_scan_interval': 'Interval scan',
@@ -1741,6 +1744,7 @@ class EnUs extends Translations {
       'remove_from_play_list': 'Remove from Playlist',
       'video_other_settings_title': 'Other Settings',
       'video_scrape_settings_title': 'Scraping',
+      'video_scrape_source': 'Scrape source',
       'video_tmdb_access_token': 'TMDB AccessToken',
       'video_tmdb_access_token_hint': 'Enter AccessToken (optional)',
       'video_tmdb_access_token_help':
@@ -1769,6 +1773,28 @@ class EnUs extends Translations {
       'video_tmdb_proxy_save_tip':
           'When saving, the server will test TMDB access via this proxy. It cannot be saved if the test fails.',
       'video_tmdb_proxy_required': 'Please enter proxy URL',
+      'video_metatube_base_url': 'MetaTube service URL',
+      'video_metatube_base_url_hint': 'Enter the MetaTube service URL',
+      'video_metatube_base_url_required': 'Please enter MetaTube service URL',
+      'video_metatube_token': 'MetaTube token',
+      'video_metatube_token_hint': 'Leave empty when auth is disabled',
+      'video_metatube_provider': 'MetaTube provider',
+      'video_metatube_provider_hint':
+          'Optional, for example FANZA; empty searches all',
+      'video_metatube_fallback': 'Enable fallback search',
+      'video_metatube_fallback_tip':
+          'When enabled, MetaTube tries other providers if the selected provider has no result.',
+      'video_nfo_translate_enable': 'Translate metadata to Chinese',
+      'video_nfo_translate_enable_tip':
+          'Translate plot and genres after scraping; keep original text if translation fails.',
+      'video_nfo_translate_api_url': 'Translation service URL',
+      'video_nfo_translate_api_url_hint':
+          'Optional LibreTranslate-compatible URL, such as http://host:5000',
+      'video_nfo_translate_api_key': 'Translation service API key',
+      'video_nfo_translate_api_key_hint': 'Optional. Leave empty to send no key.',
+      'video_nfo_translate_title_enable': 'Also translate title',
+      'video_nfo_translate_title_enable_tip':
+          'When disabled, title and sort title stay unchanged.',
       'video_subtitle_settings_title': 'Subtitle Settings',
       'video_subtitle_pre_extract_enable': 'Subtitle pre-extraction',
       'video_transcode_settings_title': 'Transcoding',
@@ -2820,6 +2846,48 @@ class EnUs extends Translations {
           'Source path @path is invalid, please contact administrator',
       'check_now': 'Check Now',
       'i_know': 'I Know',
+      'txt_speech_title': 'Read Aloud',
+      'txt_speech_from_current': 'Read from Current Position',
+      'txt_speech_from_here': 'Read from Here',
+      'txt_speech_play': 'Resume',
+      'txt_speech_pause': 'Pause',
+      'txt_speech_stop': 'Stop',
+      'txt_speech_sync_reading': 'Go to Reading Position',
+      'txt_speech_previous': 'Previous Segment',
+      'txt_speech_next': 'Next Segment',
+      'txt_speech_rate': 'Speed',
+      'txt_speech_voice': 'Voice',
+      'txt_speech_no_voices': 'No system voices available',
+      'txt_speech_system_default': 'System Default',
+      'txt_speech_reading': 'Reading aloud',
+      'txt_speech_failed': 'Read aloud failed: @error',
+      'txt_speech_web_limit':
+          'Reading may pause when the browser is in background',
+      'txt_speech_engine': 'Voice engine',
+      'txt_speech_engine_system': 'System',
+      'txt_speech_engine_local': 'Local neural',
+      'txt_speech_source_system': 'System',
+      'txt_speech_source_local': 'Local',
+      'txt_speech_switch_to_system': 'Switch to system voice',
+      'txt_speech_model_not_installed': 'Local model is not installed',
+      'txt_speech_model_download_size': 'Download about 129 MB',
+      'txt_speech_model_download': 'Download',
+      'txt_speech_model_cancel': 'Cancel download',
+      'txt_speech_model_verifying': 'Verifying model',
+      'txt_speech_model_extracting': 'Installing model',
+      'txt_speech_model_installed_size': 'Installed · @size',
+      'txt_speech_model_delete': 'Delete model',
+      'txt_speech_model_delete_confirm':
+          'Delete the local neural voice model from this device?',
+      'txt_speech_model_failed': 'Model installation failed',
+      'txt_speech_model_retry': 'Retry',
+      'txt_speech_license_title': 'Non-commercial model license',
+      'txt_speech_license_body':
+          'This voice model uses DataBaker training data and is limited to '
+          'non-commercial use. Review and comply with the license terms on '
+          'the model source page before downloading.',
+      'txt_speech_license_source': 'License source',
+      'txt_speech_license_accept': 'Agree and download',
     },
   };
 }

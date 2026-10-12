@@ -36,6 +36,8 @@ let READ_RATE = 5; // 读取文件倍率
 /** CUDA 全链路 scale_cuda 需预分配 hw frame；64 对部分 HEVC（如剪映导出）会触发 hevc_cuvid 解码死循环 */
 const CUDA_EXTRA_HW_FRAMES = 8;
 const CUDA_CUVID_STALL_ERROR_THRESHOLD = 25;
+const MAX_PLAYBACK_TRANSCODE_FPS = 60;
+const VAAPI_HIGH_FPS_4K_SAFE_WIDTH = 2560;
 async function ensureDbInit() {
   // 读取硬件加速配置需要访问本地数据库，这里做一次性初始化
   if (dbInitialized) return;
@@ -152,16 +154,36 @@ function parseFpsFromVideoStream(stream) {
 }
 
 /** HLS 只在关键帧切片；硬件编码常忽略 force_key_frames，故 GOP 需 ≈ segDur×fps（未知 fps 按 24 估，略多插 I 帧） */
-function computeHlsGopFrames(segDurSeconds, videoStream) {
+function computeHlsGopFrames(segDurSeconds, videoStream, outputFpsOverride = null) {
   const seg = Number(segDurSeconds);
   if (!Number.isFinite(seg) || seg <= 0) return 48;
-  const fps = parseFpsFromVideoStream(videoStream);
+  const overrideFps = Number(outputFpsOverride);
+  const fps = Number.isFinite(overrideFps) && overrideFps > 0 ? overrideFps : parseFpsFromVideoStream(videoStream);
   const refFps = fps != null ? fps : 24;
   let gop = Math.round(seg * refFps);
   gop = Math.max(12, gop);
   gop = Math.min(gop, 720);
   if (gop % 2 !== 0) gop += 1;
   return gop;
+}
+
+function parseVideoBitrateKbps(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  const m = raw.match(/^(\d+(?:\.\d+)?)\s*([kmg])?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = m[2] || 'k';
+  if (unit === 'm') return Math.round(n * 1000);
+  if (unit === 'g') return Math.round(n * 1000000);
+  return Math.round(n);
+}
+
+function resolvePlaybackOutputFps(videoStream) {
+  const fps = parseFpsFromVideoStream(videoStream);
+  if (fps != null && fps > MAX_PLAYBACK_TRANSCODE_FPS) return MAX_PLAYBACK_TRANSCODE_FPS;
+  return null;
 }
 
 function isQsvVideoEncoder(encoder) {
@@ -172,6 +194,58 @@ function isQsvVideoEncoder(encoder) {
 function isVideotoolboxEncoder(encoder) {
   const e = String(encoder || '').toLowerCase();
   return e === 'h264_videotoolbox' || e === 'hevc_videotoolbox';
+}
+
+function isVaapiVideoEncoder(encoder) {
+  const e = String(encoder || '').toLowerCase();
+  return e === 'h264_vaapi' || e === 'hevc_vaapi';
+}
+
+function canUseCudaFullHwDecode(hwConfig) {
+  if (!hwConfig || hwConfig.encoder !== 'h264_nvenc' || !Array.isArray(hwConfig.decodeArgs)) return false;
+  return (
+    hwConfig.decodeArgs.includes('-hwaccel') &&
+    hwConfig.decodeArgs.includes('cuda') &&
+    hwConfig.decodeArgs.includes('-hwaccel_output_format') &&
+    hwConfig.decodeArgs.includes('cuda')
+  );
+}
+
+function canUseVaapiFullHwDecode(hwConfig) {
+  if (!hwConfig || !isVaapiVideoEncoder(hwConfig.encoder) || !Array.isArray(hwConfig.decodeArgs)) return false;
+  return (
+    hwConfig.decodeArgs.includes('-hwaccel') &&
+    hwConfig.decodeArgs.includes('vaapi') &&
+    hwConfig.decodeArgs.includes('-hwaccel_output_format') &&
+    hwConfig.decodeArgs.includes('vaapi')
+  );
+}
+
+function canVaapiDecodeVideoStream(videoStreamInfo) {
+  const codec = String((videoStreamInfo && videoStreamInfo.codec_name) || '').toLowerCase();
+  if (!codec) return false;
+  return ['h264', 'hevc', 'vp9', 'av1'].includes(codec);
+}
+
+function resolvePlaybackTargetWidth(requestedWidth, videoStreamInfo) {
+  const targetLongEdge = toEvenNumber(requestedWidth);
+  if (!targetLongEdge) return null;
+
+  const { w: sourceW, h: sourceH } = getVideoStreamPixelDimensions(videoStreamInfo);
+  if (!sourceW || !sourceH || sourceW >= sourceH) return targetLongEdge;
+
+  const portraitWidth = toEvenNumber((targetLongEdge * sourceW) / sourceH);
+  return portraitWidth || targetLongEdge;
+}
+
+function resolveRealtimeVaapiTargetWidth(targetWidth, videoStreamInfo, hwConfig) {
+  const w = toEvenNumber(targetWidth);
+  if (!w || w < 3840 || !canUseVaapiFullHwDecode(hwConfig)) return w;
+
+  const fps = parseFpsFromVideoStream(videoStreamInfo);
+  if (fps == null || fps <= MAX_PLAYBACK_TRANSCODE_FPS) return w;
+
+  return Math.min(w, VAAPI_HIGH_FPS_4K_SAFE_WIDTH);
 }
 
 /** WMV/ASF 容器 + VC-1/WMV3 视频；音轨常见 wmapro。与 MP4/MKV 不同，ASF 上 input -ss 落点常非 IDR。 */
@@ -545,6 +619,21 @@ function buildCudaScaleFilter({ width, resolution, videoStreamInfo }) {
   return 'scale_cuda=format=nv12';
 }
 
+function buildVaapiScaleFilter({ width, resolution, videoCodec }) {
+  const outputFormat = String(videoCodec || '').toLowerCase() === 'h264_vaapi' ? ':format=nv12' : '';
+  const wFromParam = toEvenNumber(width);
+  if (wFromParam) return `scale_vaapi=w=${wFromParam}:h=-2${outputFormat}`;
+
+  const size = parseResolution(resolution);
+  if (size) {
+    const w = toEvenNumber(size.w);
+    if (w) return `scale_vaapi=w=${w}:h=-2${outputFormat}`;
+  }
+
+  if (outputFormat) return `scale_vaapi=format=nv12`;
+  return null;
+}
+
 function isBitmapSubtitleCodec(codecName) {
   const v = String(codecName || '').toLowerCase();
   return v === 'pgssub' || v === 'hdmv_pgs_subtitle' || v === 'vobsub' || v === 'dvd_subtitle' || v === 'dvdsub' || v === 'dvb_subtitle' || v === 'xsub';
@@ -786,9 +875,29 @@ async function startTranscoding(playId, filePath, options = {}) {
     Logger.info(`[TranscodeWorker] Preflight done in ${Date.now() - preflightStartedAt}ms playId=${playId} subtitleIndex=${subtitleIndex === undefined ? '' : subtitleIndex}`);
   }
 
-  const targetWidth = toEvenNumber(parseTargetWidth(options));
-  const gop = computeHlsGopFrames(segDur, videoStreamInfo);
   const needsHdrToSdr = streamNeedsHdrToSdr(videoStreamInfo);
+  const requestedTargetWidth = toEvenNumber(parseTargetWidth(options));
+  const initialTargetWidth = resolvePlaybackTargetWidth(requestedTargetWidth, videoStreamInfo);
+  const targetWidth = resolveRealtimeVaapiTargetWidth(initialTargetWidth, videoStreamInfo, hwConfig);
+  const outputFps = resolvePlaybackOutputFps(videoStreamInfo);
+  const gop = computeHlsGopFrames(segDur, videoStreamInfo, outputFps);
+  if (requestedTargetWidth && initialTargetWidth && requestedTargetWidth !== initialTargetWidth) {
+    Logger.info(
+      `[TranscodeWorker] Adjusted portrait target width ${requestedTargetWidth}->${initialTargetWidth} playId=${playId}`
+    );
+  }
+  if (initialTargetWidth && targetWidth && initialTargetWidth !== targetWidth) {
+    const fps = parseFpsFromVideoStream(videoStreamInfo);
+    Logger.info(
+      `[TranscodeWorker] Reduced high-fps VAAPI target width ${initialTargetWidth}->${targetWidth} sourceFps=${fps || 'unknown'} playId=${playId}`
+    );
+  }
+  if (outputFps) {
+    const fps = parseFpsFromVideoStream(videoStreamInfo);
+    Logger.info(
+      `[TranscodeWorker] Limited playback transcode fps ${fps || 'unknown'}->${outputFps} playId=${playId}`
+    );
+  }
 
   return new Promise((resolve, reject) => {
     let usedHwOnce = false;
@@ -850,11 +959,14 @@ async function startTranscoding(playId, filePath, options = {}) {
         useHwAccel &&
         mode === 'hw_full' &&
         !isHighBitDepthVideoStream(videoStreamInfo) &&
-        videoCodec === 'h264_nvenc' &&
-        hwDecodeArgs.includes('-hwaccel') &&
-        hwDecodeArgs.includes('cuda') &&
-        hwDecodeArgs.includes('-hwaccel_output_format') &&
-        hwDecodeArgs.includes('cuda');
+        canUseCudaFullHwDecode(hwConfig);
+      const vaapiCanDecodeSource = canVaapiDecodeVideoStream(videoStreamInfo);
+      const useVaapiFull =
+        useHwAccel &&
+        mode === 'hw_full' &&
+        !hasCpuFilters &&
+        vaapiCanDecodeSource &&
+        canUseVaapiFullHwDecode(hwConfig);
       const inputOptions = [];
       const seekRaw = options && options.seek !== undefined ? Number(options.seek) : NaN;
       const seek = Number.isFinite(seekRaw) && seekRaw > 0 ? seekRaw : null;
@@ -964,7 +1076,9 @@ async function startTranscoding(playId, filePath, options = {}) {
         }
       });
 
-      if (options.bitrate) {
+      const videoBitrateKbps = parseVideoBitrateKbps(options.bitrate);
+      const useVaapiRateControl = isVaapiVideoEncoder(videoCodec) && !!videoBitrateKbps;
+      if (options.bitrate && !useVaapiRateControl) {
         command.videoBitrate(options.bitrate);
       }
 
@@ -1033,6 +1147,9 @@ async function startTranscoding(playId, filePath, options = {}) {
               videoStreamInfo,
             })
           );
+        } else if (useVaapiFull) {
+          const vf = buildVaapiScaleFilter({ width: targetWidth, resolution: options.resolution, videoCodec });
+          if (vf) command.videoFilters(vf);
         } else if (useHwUploadFilter) {
           const vf = [];
           if (useD3d11vaDecodeWithCpuFilters) {
@@ -1098,6 +1215,20 @@ async function startTranscoding(playId, filePath, options = {}) {
       }
 
       const outputOptions = [`-c:v ${videoCodec}`, `-g ${gop}`, '-c:a aac', '-b:a 128k', '-ac 2'];
+      if (outputFps) {
+        outputOptions.splice(1, 0, '-r', String(outputFps));
+      }
+      if (useVaapiRateControl) {
+        outputOptions.splice(
+          1,
+          0,
+          '-rc_mode',
+          'CBR',
+          `-b:v ${videoBitrateKbps}k`,
+          `-maxrate ${videoBitrateKbps}k`,
+          `-bufsize ${Math.max(videoBitrateKbps * 2, videoBitrateKbps)}k`
+        );
+      }
       if (wmvFamily && seek !== null) {
         outputOptions.push('-avoid_negative_ts', 'make_zero', '-max_muxing_queue_size', '1024');
       }
@@ -1234,12 +1365,13 @@ async function startTranscoding(playId, filePath, options = {}) {
           return;
         }
 
-        if (useHwAccel && useCudaFull && !usedHwEncodeFallback) {
-          // CUDA 全链路失败：优先回退到“仅硬件编码”，尽可能保留性能
+        if (useHwAccel && (useCudaFull || useVaapiFull) && !usedHwEncodeFallback) {
+          // 全硬件链路失败：优先回退到“仅硬件编码”，尽可能保留性能
           usedHwEncodeFallback = true;
-          Logger.error(`[TranscodeWorker] CUDA decode+NVENC failed, fallback NVENC encode-only: ${playId}`, err || null);
+          const label = useCudaFull ? 'CUDA decode+NVENC' : 'VAAPI decode+encode';
+          Logger.error(`[TranscodeWorker] ${label} failed, fallback HW encode-only: ${playId}`, err || null);
           const errOut = stderr || capturedStderr;
-          if (errOut) Logger.error(`[TranscodeWorker] CUDA+NVENC stderr: ${errOut}`);
+          if (errOut) Logger.error(`[TranscodeWorker] ${label} stderr: ${errOut}`);
 
           try {
             fs.rmSync(outputDir, { recursive: true, force: true });
@@ -1304,7 +1436,11 @@ async function startTranscoding(playId, filePath, options = {}) {
       );
     }
 
-    const skipCudaCuvidFullPath = isHighBitDepthVideoStream(videoStreamInfo);
+    const skipCudaCuvidFullPath = hwConfig && hwConfig.encoder === 'h264_nvenc' && isHighBitDepthVideoStream(videoStreamInfo);
+    const vaapiFullDecodeUnsupported =
+      hwConfig &&
+      canUseVaapiFullHwDecode(hwConfig) &&
+      !canVaapiDecodeVideoStream(videoStreamInfo);
     const canTryFull =
       !forceCpuForWmvSeek &&
       !skipCudaCuvidFullPath &&
@@ -1313,17 +1449,18 @@ async function startTranscoding(playId, filePath, options = {}) {
       !useBitmapSubtitleOverlay &&
       !burnSubtitle &&
       !needsHdrToSdr &&
-      hwConfig.encoder === 'h264_nvenc' &&
-      Array.isArray(hwConfig.decodeArgs) &&
-      hwConfig.decodeArgs.includes('-hwaccel') &&
-      hwConfig.decodeArgs.includes('cuda') &&
-      hwConfig.decodeArgs.includes('-hwaccel_output_format') &&
-      hwConfig.decodeArgs.includes('cuda');
+      (canUseCudaFullHwDecode(hwConfig) || (canUseVaapiFullHwDecode(hwConfig) && !vaapiFullDecodeUnsupported));
 
     if (skipCudaCuvidFullPath && hwConfig && hwConfig.encoder === 'h264_nvenc') {
       const pixFmt = videoStreamInfo && videoStreamInfo.pix_fmt ? String(videoStreamInfo.pix_fmt) : '';
       Logger.info(
         `[TranscodeWorker] High bit depth source (pix_fmt=${pixFmt || 'unknown'}) skips CUDA cuvid hw_full, use hw_encode playId=${playId}`
+      );
+    }
+    if (vaapiFullDecodeUnsupported) {
+      const codec = videoStreamInfo && videoStreamInfo.codec_name ? String(videoStreamInfo.codec_name) : 'unknown';
+      Logger.info(
+        `[TranscodeWorker] Source codec ${codec} is not supported for VAAPI hw_full, use hw_encode playId=${playId}`
       );
     }
 

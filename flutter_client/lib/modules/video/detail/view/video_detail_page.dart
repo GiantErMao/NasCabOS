@@ -8,6 +8,7 @@ import '../../base/video_utils/video_utils.dart';
 import '../../../../utils/dialog_util.dart';
 import '../../../../utils/device_utils.dart';
 import '../controller/video_detail_controller.dart';
+import '../../base/video_utils/video_item_utils.dart';
 import 'parts/app_video_detail_body.dart';
 import 'parts/video_detail_body.dart';
 
@@ -54,9 +55,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         final theme = Theme.of(context);
         final isPhone = DeviceUtils.isPhone(context);
         final m = ctrl.item;
-        final title = (m?['nfo_name']?.toString().trim().isNotEmpty ?? false)
-            ? m!['nfo_name'].toString()
-            : (m?['filename']?.toString() ?? '');
+        final title = resolveVideoMapDisplayTitle(m as Map?);
         final bgUrl = m == null
             ? ''
             : VideoUtils.getFanartUrl(

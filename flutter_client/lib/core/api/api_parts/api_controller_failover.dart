@@ -1,6 +1,28 @@
 part of '../api_controller.dart';
 
 extension ApiControllerFailover on ApiController {
+  Future<bool> connectToServerUsingBestChannel(
+    ServerInfoBean serverInfo, {
+    bool skipPrivateDirectUrls = false,
+  }) async {
+    final expectedServerId = serverInfo.serverId.trim();
+    final serverInfos = <ServerInfoBean>[serverInfo];
+    if (expectedServerId.isNotEmpty) {
+      for (final stored in _loadServerInfosById(expectedServerId)) {
+        if (!identical(stored, serverInfo)) {
+          serverInfos.add(stored);
+        }
+      }
+    }
+    return _probePreferredChannel(
+      serverInfos,
+      expectedServerId: expectedServerId,
+      reconnectCurrentP2p: true,
+      skipPrivateDirectUrls: skipPrivateDirectUrls,
+      includeCurrentBaseUrl: false,
+    );
+  }
+
   Future<bool> refreshConnectChannel() {
     final existing = _manualConnectChannelRefreshInFlight;
     if (existing != null) return existing;
@@ -158,6 +180,8 @@ extension ApiControllerFailover on ApiController {
     required String expectedServerId,
     required bool reconnectCurrentP2p,
     String? failedBaseUrl,
+    bool skipPrivateDirectUrls = false,
+    bool includeCurrentBaseUrl = true,
   }) async {
     final failed = _normalizeBaseUrl(failedBaseUrl ?? '');
     final seen = <String>{};
@@ -165,6 +189,8 @@ extension ApiControllerFailover on ApiController {
     for (final rawUrl in _buildDirectProbeCandidates(
       orderedServerInfos,
       failedBaseUrl: failed,
+      skipPrivateDirectUrls: skipPrivateDirectUrls,
+      includeCurrentBaseUrl: includeCurrentBaseUrl,
     )) {
       final url = _normalizeBaseUrl(rawUrl);
       if (url.isEmpty || !_isValidHttpBaseUrl(url)) continue;
@@ -278,6 +304,8 @@ extension ApiControllerFailover on ApiController {
   List<String> _buildDirectProbeCandidates(
     List<ServerInfoBean> serverInfos, {
     String? failedBaseUrl,
+    bool skipPrivateDirectUrls = false,
+    bool includeCurrentBaseUrl = true,
   }) {
     final failed = _normalizeBaseUrl(failedBaseUrl ?? '');
     final current = _normalizeBaseUrl(baseUrl);
@@ -291,13 +319,15 @@ extension ApiControllerFailover on ApiController {
       if (url.isEmpty) return;
       if (failed.isNotEmpty && url == failed) return;
       if (_isUrlPrivateLan(url)) {
+        if (skipPrivateDirectUrls) return;
         privateUrls.add(url);
       } else {
         publicUrls.add(url);
       }
     }
 
-    if (current.isNotEmpty &&
+    if (includeCurrentBaseUrl &&
+        current.isNotEmpty &&
         current != ApiController.p2pBaseUrl &&
         !preferPublicFirst) {
       addUrl(current);
@@ -307,7 +337,8 @@ extension ApiControllerFailover on ApiController {
       addUrl(_buildLanHttpBaseUrl(serverInfo));
       addUrl(serverInfo.serverUrl.trim());
     }
-    if (current.isNotEmpty &&
+    if (includeCurrentBaseUrl &&
+        current.isNotEmpty &&
         current != ApiController.p2pBaseUrl &&
         preferPublicFirst) {
       addUrl(current);

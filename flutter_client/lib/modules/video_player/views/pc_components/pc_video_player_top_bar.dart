@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/video_player_controller.dart';
+import '../components/transcode_info_dialog.dart';
 import '../components/video_info_drawer.dart';
 
 class PcVideoPlayerTopBar extends GetView<PlayerController> {
@@ -56,6 +57,14 @@ class PcVideoPlayerTopBar extends GetView<PlayerController> {
                   );
                 },
               ),
+              if (!controller.isUrlSource.value)
+                IconButton(
+                  icon: const Icon(Icons.memory, color: Colors.white),
+                  tooltip: '转码信息',
+                  onPressed: () {
+                    TranscodeInfoDialog.show(context, controller);
+                  },
+                ),
               if (!controller.isUrlSource.value)
                 IconButton(
                   icon: const Icon(Icons.info_outline, color: Colors.white),

@@ -10,6 +10,7 @@ class VideoScrapeApiService extends BaseApiService {
   Future<ApiResponse<Map<String, dynamic>>> startScrape({
     required int indexId,
     int? tmdbId,
+    String? scrapeId,
     String? mode,
     bool showLoading = false,
   }) {
@@ -18,6 +19,8 @@ class VideoScrapeApiService extends BaseApiService {
       body: {
         'index_id': indexId,
         if (tmdbId != null && tmdbId > 0) 'tmdb_id': tmdbId,
+        if (scrapeId != null && scrapeId.trim().isNotEmpty)
+          'scrape_id': scrapeId.trim(),
         if (mode != null && mode.trim().isNotEmpty) 'mode': mode.trim(),
       },
       showLoading: showLoading,

@@ -368,7 +368,7 @@ async function detectAndSaveTranscodeHwAccel() {
       candidates.push({
         name: 'linux_vaapi_h264',
         kind: 'integrated',
-        decodeArgs: null,
+        decodeArgs: ['-hwaccel', 'vaapi', '-hwaccel_device', renderDevice, '-hwaccel_output_format', 'vaapi'],
         encoder: 'h264_vaapi',
         hwType: 'vaapi',
         device: renderDevice,
@@ -378,7 +378,7 @@ async function detectAndSaveTranscodeHwAccel() {
       candidates.push({
         name: 'linux_vaapi_h265',
         kind: 'integrated',
-        decodeArgs: null,
+        decodeArgs: ['-hwaccel', 'vaapi', '-hwaccel_device', renderDevice, '-hwaccel_output_format', 'vaapi'],
         encoder: 'hevc_vaapi',
         hwType: 'vaapi',
         device: renderDevice,
@@ -455,6 +455,7 @@ async function detectAndSaveTranscodeHwAccel() {
 
     const decodeArgs = Array.isArray(cand.decodeArgs) ? cand.decodeArgs : [];
     const isCudaDecode = decodeArgs.includes('-hwaccel') && decodeArgs.includes('cuda') && decodeArgs.includes('-hwaccel_output_format') && decodeArgs.includes('cuda');
+    const isVaapiDecode = decodeArgs.includes('-hwaccel') && decodeArgs.includes('vaapi') && decodeArgs.includes('-hwaccel_output_format') && decodeArgs.includes('vaapi');
 
     const vfParts = [];
     const candEncoderLower = String(cand && cand.encoder ? cand.encoder : '').toLowerCase();
@@ -466,7 +467,10 @@ async function detectAndSaveTranscodeHwAccel() {
         vfParts.push('scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2');
       }
     }
-    if (!isCudaDecode && cand && typeof cand.hwUploadFilter === 'string' && cand.hwUploadFilter.length > 0) {
+    if (isVaapiDecode) {
+      vfParts.push('scale_vaapi=w=1280:h=-2');
+    }
+    if (!isCudaDecode && !isVaapiDecode && cand && typeof cand.hwUploadFilter === 'string' && cand.hwUploadFilter.length > 0) {
       vfParts.push(cand.hwUploadFilter);
     }
     const vf = vfParts.length > 0 ? vfParts.join(',') : null;
@@ -485,7 +489,7 @@ async function detectAndSaveTranscodeHwAccel() {
           args.push(...cand.initDeviceArgs);
         }
         args.push('-i', tc.input);
-        const pixArgs = isNvenc && isCudaDecode ? [] : ['-pix_fmt', 'yuv420p'];
+        const pixArgs = (isNvenc && isCudaDecode) || isVaapiDecode ? [] : ['-pix_fmt', 'yuv420p'];
         args.push('-t', '1', '-an', '-sn', ...(vf ? ['-vf', vf] : []), '-c:v', cand.encoder, ...pixArgs, '-f', 'mp4', out);
       } else {
         // lavfi 统一输出到 mp4 文件：
@@ -498,7 +502,7 @@ async function detectAndSaveTranscodeHwAccel() {
         if (Array.isArray(cand.initDeviceArgs) && cand.initDeviceArgs.length > 0) {
           args.push(...cand.initDeviceArgs);
         }
-        const pixArgs = isNvenc && isCudaDecode ? [] : ['-pix_fmt', 'yuv420p'];
+        const pixArgs = (isNvenc && isCudaDecode) || isVaapiDecode ? [] : ['-pix_fmt', 'yuv420p'];
         args.push('-f', 'lavfi', '-i', tc.input, '-t', '1', '-an', '-sn', ...(vf ? ['-vf', vf] : []), '-c:v', cand.encoder, ...pixArgs, '-f', 'mp4', out);
       }
 

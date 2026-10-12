@@ -38,6 +38,7 @@ part 'parts/preference.dart';
 part 'parts/listener.dart';
 part 'parts/engine_switch.dart';
 part 'parts/web_subtitle.dart';
+part 'parts/transcode_info.dart';
 
 /// 视频播放器控制器
 /// 负责管理视频播放状态、播放列表、窗口管理等

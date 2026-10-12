@@ -14,11 +14,11 @@ class VideoScrapeController {
       const body = req.body || {};
       const indexId = Number(body.index_id ?? body.indexId ?? 0) || 0;
       const tmdbIdRaw = String(body.tmdb_id ?? body.tmdbId ?? '').trim();
+      const scrapeId = String(body.scrape_id ?? body.scrapeId ?? tmdbIdRaw).trim();
       const tmdbId = tmdbIdRaw ? Number(tmdbIdRaw || 0) || 0 : 0;
-      const mode = String(body.mode ?? '').trim() || (tmdbId ? 'manual' : 'auto');
+      const mode = String(body.mode ?? '').trim() || (scrapeId ? 'manual' : 'auto');
 
       if (!indexId) return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
-      if (tmdbIdRaw && !tmdbId) return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
       if (mode !== 'manual' && mode !== 'auto') return ResponseUtil.error(req, res, 'common.PARAM_ERROR', 400);
 
       const resolvedIndexId = await ScrapeCleanupUtil.resolveTvIndexIdIfSeason(req.dbVideo, indexId);
@@ -110,6 +110,7 @@ class VideoScrapeController {
               requestId,
               indexId: targetIndexId,
               tmdbId: tmdbId || undefined,
+              scrapeId: scrapeId || undefined,
               mode,
             },
           });

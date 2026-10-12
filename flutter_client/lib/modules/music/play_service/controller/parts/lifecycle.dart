@@ -24,19 +24,9 @@ extension MusicPlayServiceLifecycle on MusicPlayServiceController {
     final future = () async {
       registerFvp();
       if (_supportBackground) {
-        _handler = await AudioService.init(
-          builder: () => _MusicAudioHandler(this),
-          config: AudioServiceConfig(
-            androidNotificationChannelId: 'nascab.music.playback',
-            androidNotificationChannelName: 'Music Playback',
-            androidNotificationChannelDescription:
-                'Background music playback controls',
-            androidStopForegroundOnPause: false,
-            androidShowNotificationBadge: false,
-            androidNotificationClickStartsActivity: true,
-            androidResumeOnClick: true,
-          ),
-        );
+        _handler ??= _MusicMediaPlaybackDelegate(this);
+        _mediaCoordinator.registerDelegate(_handler!);
+        await _mediaCoordinator.ensureInitialized();
       }
       // Android：配置 AudioSession，告知系统这是音乐播放器
       // 正确的 audio attributes 使得 OPPO/华为等控制中心能识别并关联本 app，
@@ -57,23 +47,35 @@ extension MusicPlayServiceLifecycle on MusicPlayServiceController {
     }
   }
 
+  Future<void> _activateMediaOwner() async {
+    if (!_supportBackground) return;
+    await _initService();
+    await _mediaCoordinator.activate(MusicPlayServiceController.mediaOwnerId);
+  }
+
   Future<void> _configureAndroidAudioSession() async {
     try {
       final session = await AudioSession.instance;
-      await session.configure(
-        const AudioSessionConfiguration(
-          androidAudioAttributes: AndroidAudioAttributes(
-            contentType: AndroidAudioContentType.music,
-            usage: AndroidAudioUsage.media,
-            flags: AndroidAudioFlags.none,
-          ),
-          // gain（永久焦点）适合音乐播放器；系统会把媒体按键路由给持有 gain 焦点的 app
-          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-          androidWillPauseWhenDucked: true,
-        ),
-      );
+      await _applyMusicAudioSessionConfiguration(session);
       _subscribeAudioSessionEvents(session);
     } catch (_) {}
+  }
+
+  Future<void> _applyMusicAudioSessionConfiguration(
+    AudioSession session,
+  ) async {
+    await session.configure(
+      const AudioSessionConfiguration(
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.music,
+          usage: AndroidAudioUsage.media,
+          flags: AndroidAudioFlags.none,
+        ),
+        // gain（永久焦点）适合音乐播放器；系统会把媒体按键路由给持有 gain 焦点的 app
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        androidWillPauseWhenDucked: true,
+      ),
+    );
   }
 
   void _subscribeAudioSessionEvents(AudioSession session) {

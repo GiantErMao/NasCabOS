@@ -91,6 +91,7 @@ class BookListController extends GetxController {
   final RxInt total = 0.obs;
 
   final RxString searchText = ''.obs;
+  final RxString letterFilter = ''.obs;
 
   final RxList<BookListPathItem> availablePaths = <BookListPathItem>[].obs;
   final RxList<String> selectedPaths = <String>[].obs;
@@ -115,6 +116,7 @@ class BookListController extends GetxController {
   Timer? _searchDebounce;
   Worker? _selectedPathsWorker;
   bool _restoringSelectedPathsFromCache = false;
+  int _queryVersion = 0;
 
   void _autoLoadMoreIfNeeded() {
     if (!hasMore.value) return;
@@ -260,18 +262,16 @@ class BookListController extends GetxController {
     if (!_shouldUseSelectedPathsCache) return false;
     if (selectedPaths.isEmpty) return false;
     if (availablePaths.isEmpty) return false;
-    final availableSet =
-        availablePaths
-            .map((e) => e.path.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet();
+    final availableSet = availablePaths
+        .map((e) => e.path.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
     if (availableSet.isEmpty) return false;
 
-    final currentSet =
-        selectedPaths
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet();
+    final currentSet = selectedPaths
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
     final next =
         currentSet.where(availableSet.contains).toSet().toList(growable: false)
           ..sort();
@@ -332,6 +332,7 @@ class BookListController extends GetxController {
 
   @override
   void onClose() {
+    _queryVersion++;
     _searchDebounce?.cancel();
     _selectedPathsWorker?.dispose();
     super.onClose();
@@ -377,7 +378,9 @@ class BookListController extends GetxController {
 
     final startContentY = s.dy + _dragStartScrollOffset;
     final currentContentY = current.dy + scrollOffset;
-    final topContent = startContentY < currentContentY ? startContentY : currentContentY;
+    final topContent = startContentY < currentContentY
+        ? startContentY
+        : currentContentY;
     final heightContent = (startContentY - currentContentY).abs();
     selectionRectContent.value = Rect.fromLTWH(
       left,
@@ -670,33 +673,43 @@ class BookListController extends GetxController {
   }
 
   Future<void> refreshList({bool showLoading = false}) async {
-    if (loading.value) return;
+    final requestVersion = ++_queryVersion;
+    final requestSearch = searchText.value.trim();
+    final requestLetterFilter = letterFilter.value.trim();
+    var requestSourceList = selectedPaths.isEmpty
+        ? null
+        : selectedPaths.toList(growable: false);
+    final requestSortBy = _toSortByParam(sortBy.value);
+    final requestSortOrder = _toSortOrderParam(sortOrder.value);
+
     loading.value = true;
     autoLoadFailed.value = false;
     try {
       var effectiveShowLoading = showLoading;
       var didReconcile = false;
       for (var pass = 0; pass < 2; pass++) {
-        _page = 1;
         final response = await BookListApiService.instance.listPaged(
-          page: _page,
+          page: 1,
           pageSize: _pageSize,
           type: type,
           listId: listId,
           seriesIndexId: seriesIndexId,
           collectionId: collectionId,
           isFavorite: isFavorite,
-          search: searchText.value.trim(),
-          sourceList: selectedPaths.isEmpty ? null : selectedPaths.toList(),
-          sortBy: _toSortByParam(sortBy.value),
-          sortOrder: _toSortOrderParam(sortOrder.value),
+          search: requestSearch,
+          letterFilter: requestLetterFilter,
+          sourceList: requestSourceList,
+          sortBy: requestSortBy,
+          sortOrder: requestSortOrder,
           showLoading: effectiveShowLoading,
         );
+        if (requestVersion != _queryVersion) return;
         if (!response.success) {
           autoLoadFailed.value = true;
           return;
         }
         final res = response.data!;
+        _page = 1;
         items.assignAll(res.items);
         total.value = res.pagination.total;
         hasMore.value = res.pagination.hasNextPage;
@@ -712,6 +725,9 @@ class BookListController extends GetxController {
         final changed = _reconcileSelectedPathsWithAvailablePaths();
         if (!changed || didReconcile) break;
         didReconcile = true;
+        requestSourceList = selectedPaths.isEmpty
+            ? null
+            : selectedPaths.toList(growable: false);
         effectiveShowLoading = false;
       }
 
@@ -735,8 +751,10 @@ class BookListController extends GetxController {
         _globalSourceEmptyDialogShown = false;
       }
     } finally {
-      loading.value = false;
-      firstLoaded.value = true;
+      if (requestVersion == _queryVersion) {
+        loading.value = false;
+        firstLoaded.value = true;
+      }
     }
   }
 
@@ -746,6 +764,14 @@ class BookListController extends GetxController {
     if (fromAuto && autoLoadFailed.value) return;
 
     loadingMore.value = true;
+    final requestVersion = _queryVersion;
+    final requestSearch = searchText.value.trim();
+    final requestLetterFilter = letterFilter.value.trim();
+    final requestSourceList = selectedPaths.isEmpty
+        ? null
+        : selectedPaths.toList(growable: false);
+    final requestSortBy = _toSortByParam(sortBy.value);
+    final requestSortOrder = _toSortOrderParam(sortOrder.value);
     try {
       final nextPage = _page + 1;
       final response = await BookListApiService.instance.listPaged(
@@ -756,12 +782,14 @@ class BookListController extends GetxController {
         seriesIndexId: seriesIndexId,
         collectionId: collectionId,
         isFavorite: isFavorite,
-        search: searchText.value,
-        sourceList: selectedPaths.isEmpty ? null : selectedPaths.toList(),
-        sortBy: _toSortByParam(sortBy.value),
-        sortOrder: _toSortOrderParam(sortOrder.value),
+        search: requestSearch,
+        letterFilter: requestLetterFilter,
+        sourceList: requestSourceList,
+        sortBy: requestSortBy,
+        sortOrder: requestSortOrder,
         showLoading: false,
       );
+      if (requestVersion != _queryVersion) return;
       if (!response.success) {
         autoLoadFailed.value = true;
         return;
@@ -773,7 +801,9 @@ class BookListController extends GetxController {
       hasMore.value = res.pagination.hasNextPage;
       autoLoadFailed.value = false;
     } catch (_) {
-      autoLoadFailed.value = true;
+      if (requestVersion == _queryVersion) {
+        autoLoadFailed.value = true;
+      }
       rethrow;
     } finally {
       loadingMore.value = false;
@@ -781,7 +811,9 @@ class BookListController extends GetxController {
   }
 
   void setSearchText(String v) {
+    if (searchText.value == v) return;
     searchText.value = v;
+    _queryVersion++;
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
       refreshList(showLoading: false);
@@ -789,7 +821,9 @@ class BookListController extends GetxController {
   }
 
   void setSearchImmediate(String v) {
+    if (searchText.value == v) return;
     searchText.value = v;
+    _queryVersion++;
     _searchDebounce?.cancel();
     refreshList(showLoading: false);
   }
@@ -797,8 +831,18 @@ class BookListController extends GetxController {
   void clearSearch() {
     if (searchText.value.isEmpty) return;
     searchText.value = '';
+    _queryVersion++;
     _searchDebounce?.cancel();
     refreshList(showLoading: true);
+  }
+
+  void setLetterFilter(String? value) {
+    final normalized = (value ?? '').trim().toUpperCase();
+    if (letterFilter.value == normalized) return;
+    letterFilter.value = normalized;
+    _queryVersion++;
+    _searchDebounce?.cancel();
+    refreshList(showLoading: false);
   }
 
   void setSort(BookListSortBy by, BookListSortOrder order) {

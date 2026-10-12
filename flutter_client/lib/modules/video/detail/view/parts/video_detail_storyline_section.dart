@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../../../../utils/dialog_util.dart';
+import '../../../base/video_utils/video_item_utils.dart';
 import '../../controller/video_detail_controller.dart';
 
 /// 剧情简介区块。
@@ -14,9 +15,7 @@ class VideoDetailStorylineSection extends StatelessWidget {
     final theme = Theme.of(context);
     final m = ctrl.item ?? const <String, dynamic>{};
 
-    final title = (m['nfo_name']?.toString().trim().isNotEmpty ?? false)
-        ? m['nfo_name'].toString()
-        : (m['filename']?.toString() ?? '');
+    final title = resolveVideoMapDisplayTitle(m);
     final year = (m['nfo_year'] as num?)?.toInt() ?? 0;
     final score = (m['nfo_score'] as num?)?.toDouble() ?? 0;
     final regions = (m['nfo_regions']?.toString() ?? '').trim();

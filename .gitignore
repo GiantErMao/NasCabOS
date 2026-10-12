@@ -8,6 +8,7 @@ yarn.lock
 .DS_Store
 *.lock
 logs/**/*
+.tmp_*/
 .env
 flutter_client/android/nascabos-pwd-nascab.jks
 electron_server/onnx_models/faces/insightFace/model.onnx

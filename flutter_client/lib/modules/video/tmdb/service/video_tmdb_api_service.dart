@@ -2,7 +2,7 @@ import 'package:get/get.dart';
 import '../../../../core/api/base_api_service.dart';
 
 class VideoTmdbSearchItem {
-  final int id;
+  final String id;
   final String mediaType;
   final String title;
   final String originalTitle;
@@ -32,7 +32,7 @@ class VideoTmdbSearchItem {
     final actors = json['actors'];
     final genres = json['genres'];
     return VideoTmdbSearchItem(
-      id: (json['id'] as num?)?.toInt() ?? 0,
+      id: (json['id']?.toString() ?? '').trim(),
       mediaType: (json['media_type']?.toString() ?? '').trim(),
       title: (json['title']?.toString() ?? '').trim(),
       originalTitle: (json['original_title']?.toString() ?? '').trim(),
@@ -63,11 +63,13 @@ class VideoTmdbSearchResult {
   final int page;
   final int totalPages;
   final List<VideoTmdbSearchItem> results;
+  final String errorMessage;
 
   const VideoTmdbSearchResult({
     required this.page,
     required this.totalPages,
     required this.results,
+    this.errorMessage = '',
   });
 
   factory VideoTmdbSearchResult.fromJson(Map<String, dynamic> json) {
@@ -111,11 +113,23 @@ class VideoTmdbApiService extends BaseApiService {
         if (tmdbId.trim().isNotEmpty) 'tmdb_id': tmdbId.trim(),
         'page': page,
       },
+      // MetaTube may fan out across providers; allow more than the global 10s API timeout.
+      timeout: const Duration(seconds: 45),
       showLoading: showLoading,
     );
 
     if (!res.success) {
-      return const VideoTmdbSearchResult(page: 1, totalPages: 0, results: []);
+      final message = (res.message ?? '').trim();
+      final status = res.code;
+      return VideoTmdbSearchResult(
+        page: 1,
+        totalPages: 0,
+        results: const [],
+        errorMessage: [
+          if (status != null && status > 0) 'HTTP $status',
+          if (message.isNotEmpty) message,
+        ].join(' · '),
+      );
     }
     final data = res.data ?? <String, dynamic>{};
     return VideoTmdbSearchResult.fromJson(data);

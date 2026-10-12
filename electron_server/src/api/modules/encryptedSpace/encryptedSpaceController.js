@@ -13,6 +13,7 @@ const tableConfig = require('../../../db/table/tableConfig');
 const userUtil = require('../../../utils/userUtil');
 const jwtUtil = require('../../../utils/jwtUtil');
 const videoFfprobeUtil = require('../../../utils/videoFfprobeUtil');
+const { selectNaturalPageIdsFromIterable, sortRowsByPageIds } = require('../../../utils/naturalSortUtil');
 const {
   encryptString,
   decryptString,
@@ -205,6 +206,20 @@ function listIndex(db, opts) {
     args.push('%' + keyword.replace(/[\\%_]/g, m => '\\' + m) + '%');
   }
   const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  if (field === 'show_name') {
+    const candidateRows = db.prepare(`SELECT id, show_name FROM private_space_index${where}`).iterate(...args);
+    const pageIds = selectNaturalPageIdsFromIterable(candidateRows, {
+      sortOrder: type,
+      offset: offsetCount,
+      limit: count,
+      valueFields: ['show_name'],
+    });
+    if (pageIds.length === 0) return [];
+
+    const placeholders = pageIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT * FROM private_space_index WHERE id IN (${placeholders})`).all(...pageIds);
+    return sortRowsByPageIds(rows, pageIds);
+  }
   const sql = `SELECT * FROM private_space_index${where} ORDER BY ${field} ${type} LIMIT ? OFFSET ?`;
   args.push(count, offsetCount);
   return db.prepare(sql).all(...args);

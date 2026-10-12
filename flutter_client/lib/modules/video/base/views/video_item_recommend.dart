@@ -35,7 +35,7 @@ class _VideoItemRecommendState extends State<VideoItemRecommend> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final item = widget.item;
-    final title = item.nfoName.isNotEmpty ? item.nfoName : item.filename;
+    final title = resolveVideoItemDisplayTitle(item);
     final year = item.nfoYear > 0 ? item.nfoYear.toString() : '';
     final meta = buildVideoHomeMeta(item);
     final fanartUrl = VideoUtils.getFanartUrl(item);

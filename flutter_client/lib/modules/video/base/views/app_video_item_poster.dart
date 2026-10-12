@@ -127,7 +127,11 @@ class AppVideoItemPoster extends StatelessWidget {
     final target = resolveVideoDeletePath(item);
     if (target.isEmpty) return;
 
-    final isMovie = ['movie', 'bdmv', 'video_ts'].contains(item.mediaType.toLowerCase().trim());
+    final isMovie = [
+      'movie',
+      'bdmv',
+      'video_ts',
+    ].contains(item.mediaType.toLowerCase().trim());
     final isShellSupported = ApiController.instance.state.shellSupported;
     final dialogContext = Get.context;
     if (dialogContext == null) return;
@@ -198,9 +202,11 @@ class AppVideoItemPoster extends StatelessWidget {
     );
     if (ok != true) return;
 
-    final res = await FileApiService.instance.deleteEntries([
-      target,
-    ], deleteScrapeFiles: isMovie && deleteScrapeFiles, recycle: recycle);
+    final res = await FileApiService.instance.deleteEntries(
+      [target],
+      deleteScrapeFiles: isMovie && deleteScrapeFiles,
+      recycle: recycle,
+    );
     if (!res.success) {
       ToastUtil.show('operation_failed'.tr);
       return;
@@ -394,7 +400,7 @@ class AppVideoItemPoster extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = item.nfoName.isNotEmpty ? item.nfoName : item.filename;
+    final title = resolveVideoItemDisplayTitle(item);
     final posterUrl = VideoUtils.getPosterUrl(item, size: 500);
     final safeProgress = progress?.clamp(0, 1).toDouble();
     final rating = item.nfoScore;

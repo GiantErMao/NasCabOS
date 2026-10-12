@@ -68,19 +68,25 @@ class VideoOtherSettingsView extends StatelessWidget {
                                 style: theme.textTheme.titleSmall,
                               ),
                               const SizedBox(height: 12),
-                              _TokenField(ctrl: ctrl),
+                              _ScrapeSourceField(ctrl: ctrl),
                               const SizedBox(height: 12),
-                              _LanguageField(ctrl: ctrl),
+                              _NfoTranslateFields(ctrl: ctrl),
                               const SizedBox(height: 12),
-                              _ProxyToggle(ctrl: ctrl),
                               Obx(() {
-                                if (!ctrl.proxyEnabled.value) {
-                                  return const SizedBox.shrink();
+                                if (ctrl.scrapeSource.value == 'metatube') {
+                                  return _MetaTubeFields(ctrl: ctrl);
                                 }
                                 return Column(
                                   children: [
-                                    const SizedBox(height: 10),
-                                    _ProxyField(ctrl: ctrl),
+                                    _TokenField(ctrl: ctrl),
+                                    const SizedBox(height: 12),
+                                    _LanguageField(ctrl: ctrl),
+                                    const SizedBox(height: 12),
+                                    _ProxyToggle(ctrl: ctrl),
+                                    if (ctrl.proxyEnabled.value) ...[
+                                      const SizedBox(height: 10),
+                                      _ProxyField(ctrl: ctrl),
+                                    ],
                                   ],
                                 );
                               }),
@@ -347,6 +353,218 @@ class _TranscodeTempDirField extends StatelessWidget {
               style: theme.textTheme.bodyMedium,
             ),
           ),
+        ],
+      );
+    });
+  }
+}
+
+class _ScrapeSourceField extends StatelessWidget {
+  final VideoOtherSettingsController ctrl;
+
+  const _ScrapeSourceField({required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Obx(() {
+      final value = ctrl.scrapeSource.value == 'metatube' ? 'metatube' : 'tmdb';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('video_scrape_source'.tr, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: value,
+            items: [
+              DropdownMenuItem(value: 'tmdb', child: Text('TMDB')),
+              DropdownMenuItem(value: 'metatube', child: Text('MetaTube')),
+            ],
+            onChanged: (v) => ctrl.setScrapeSource(v ?? 'tmdb'),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}
+
+class _MetaTubeFields extends StatelessWidget {
+  final VideoOtherSettingsController ctrl;
+
+  const _MetaTubeFields({required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('video_metatube_base_url'.tr, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        TextField(
+          controller: ctrl.metatubeBaseUrlController,
+          maxLines: 1,
+          decoration: InputDecoration(
+            hintText: 'video_metatube_base_url_hint'.tr,
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text('video_metatube_token'.tr, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        TextField(
+          controller: ctrl.metatubeTokenController,
+          maxLines: 1,
+          decoration: InputDecoration(
+            hintText: 'video_metatube_token_hint'.tr,
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text('video_metatube_provider'.tr, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        TextField(
+          controller: ctrl.metatubeProviderController,
+          maxLines: 1,
+          decoration: InputDecoration(
+            hintText: 'video_metatube_provider_hint'.tr,
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Obx(() {
+          final enabled = ctrl.metatubeFallback.value;
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'video_metatube_fallback'.tr,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text('video_metatube_fallback_tip'.tr),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              CustomSwitch(
+                value: enabled,
+                onChanged: (v) => ctrl.metatubeFallback.value = v,
+              ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _NfoTranslateFields extends StatelessWidget {
+  final VideoOtherSettingsController ctrl;
+
+  const _NfoTranslateFields({required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Obx(() {
+      final enabled = ctrl.nfoTranslateEnabled.value;
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'video_nfo_translate_enable'.tr,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text('video_nfo_translate_enable_tip'.tr),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              CustomSwitch(
+                value: enabled,
+                onChanged: (v) => ctrl.nfoTranslateEnabled.value = v,
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'video_nfo_translate_api_url'.tr,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl.nfoTranslateApiUrlController,
+              maxLines: 1,
+              decoration: InputDecoration(
+                hintText: 'video_nfo_translate_api_url_hint'.tr,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'video_nfo_translate_api_key'.tr,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl.nfoTranslateApiKeyController,
+              maxLines: 1,
+              obscureText: true,
+              decoration: InputDecoration(
+                hintText: 'video_nfo_translate_api_key_hint'.tr,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'video_nfo_translate_title_enable'.tr,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Text('video_nfo_translate_title_enable_tip'.tr),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                CustomSwitch(
+                  value: ctrl.nfoTranslateTitleEnabled.value,
+                  onChanged: (v) => ctrl.nfoTranslateTitleEnabled.value = v,
+                ),
+              ],
+            ),
+          ],
         ],
       );
     });

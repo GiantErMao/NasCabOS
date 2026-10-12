@@ -15,11 +15,11 @@ async function cleanupOldArtworkAndNfo(runner, indexId) {
   await ScrapeCleanupUtil.cleanupByIndexId(runner.knexVideo, id);
 }
 
-async function runJob({ indexId, tmdbId }) {
+async function runJob({ indexId, tmdbId, scrapeId }) {
   const runner = new NfoFetchRunner();
   await runner.init();
   await cleanupOldArtworkAndNfo(runner, indexId);
-  const res = await runner.scrapeByIndexId({ indexId, tmdbId });
+  const res = await runner.scrapeByIndexId({ indexId, tmdbId, scrapeId });
   return !!(res && res.ok);
 }
 
@@ -36,10 +36,11 @@ process.on('message', message => {
   const data = message.data && typeof message.data === 'object' ? message.data : {};
   const indexId = Number(data.indexId || data.index_id || 0) || 0;
   const tmdbId = data.tmdbId ? Number(data.tmdbId || 0) || 0 : data.tmdb_id ? Number(data.tmdb_id || 0) || 0 : 0;
+  const scrapeId = data.scrapeId ? String(data.scrapeId || '').trim() : data.scrape_id ? String(data.scrape_id || '').trim() : '';
 
   Promise.resolve()
     .then(async () => {
-      const ok = await runJob({ indexId, tmdbId });
+      const ok = await runJob({ indexId, tmdbId, scrapeId });
       await new Promise(resolve => setTimeout(resolve, 50));
       process.exit(ok ? 0 : 1);
     })

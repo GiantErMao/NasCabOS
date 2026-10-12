@@ -4,6 +4,42 @@ const VideoSourceService = require('../source/videoSourceService');
 const userUtil = require('../../../../utils/userUtil');
 const { intersectPaths, parsePathListText } = require('../../photo/timeline/photoPathQueryUtil');
 const smartAlbumFilterUtil = require('../smartAlbum/videoSmartAlbumFilterUtil');
+const { selectNaturalPageIdsFromQuery, sortRowsByPageIds } = require('../../../../utils/naturalSortUtil');
+
+function _extractMovieCodeFromFilename(filename) {
+  const base = path.parse(String(filename || '')).name;
+  const patterns = [
+    /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?:ch)?(?=$|[^0-9a-z])/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(base);
+    if (!match || !match[2]) continue;
+    const raw = match[2].trim();
+    const reverse1Pondo = raw.match(/^(\d{6}[-_]\d{2,4})[-_\s]?1pon(?:do)?$/i);
+    return (reverse1Pondo ? `1PONDO-${reverse1Pondo[1]}` : raw)
+      .replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-')
+      .toUpperCase();
+  }
+  return '';
+}
+
+function _getVideoNameSortValue(row) {
+  const mediaType = String(row && row.media_type || '').trim().toLowerCase();
+  if (mediaType === 'movie' || mediaType === 'bdmv' || mediaType === 'video_ts') {
+    const movieCode = _extractMovieCodeFromFilename(row && row.filename);
+    if (movieCode) {
+      const nfoName = String(row && row.nfo_name || '').trim();
+      return `${movieCode} ${nfoName || String(row && row.filename || '').trim()}`;
+    }
+  }
+  const nfoName = String(row && row.nfo_name || '').trim();
+  return nfoName || String(row && row.filename || '').trim();
+}
 
 function _applyVideoIndexPathPrefixFilter(query, paths) {
   const list = Array.isArray(paths) ? paths.map(p => String(p || '').trim()).filter(Boolean) : [];
@@ -528,6 +564,26 @@ class VideoListService {
         'v.create_time'
       );
 
+    let naturalPageIds = null;
+    if (sortBy === 'name') {
+      const candidateQuery = baseQuery
+        .clone()
+        .clearSelect()
+        .clearOrder()
+        .distinct('v.id', 'v.media_type', 'v.nfo_name', 'v.filename');
+      naturalPageIds = await selectNaturalPageIdsFromQuery(candidateQuery, {
+        sortOrder,
+        offset,
+        limit: safeLimit,
+        getValue: _getVideoNameSortValue,
+      });
+      if (naturalPageIds.length === 0) {
+        query.whereRaw('1 = 0');
+      } else {
+        query.whereIn('v.id', naturalPageIds);
+      }
+    }
+
     if (sortBy === 'favorite_time' && isFavoriteList) {
       query.orderBy('fav.create_time', sortOrder);
       query.orderBy('fav.id', 'desc');
@@ -537,17 +593,20 @@ class VideoListService {
       query.orderBy('v.nfo_year', sortOrder);
     } else if (sortBy === 'score') {
       query.orderBy('v.nfo_score', sortOrder);
-    } else if (sortBy === 'name') {
-      query.orderByRaw(`lower(case when v.nfo_name is not null and trim(v.nfo_name) != '' then v.nfo_name else v.filename end) ${sortOrder}`);
+    } else if (naturalPageIds !== null) {
+      // The selected page is restored to its natural order after the full rows are loaded.
     } else {
       query.orderBy('v.create_time', sortOrder);
     }
-    query.orderBy('v.id', 'desc');
+    if (naturalPageIds === null) {
+      query.orderBy('v.id', 'desc');
+      query.limit(safeLimit).offset(offset);
+    }
 
-    const rows = await query
-      .limit(safeLimit)
-      .offset(offset)
-      .catch(() => []);
+    let rows = await query.catch(() => []);
+    if (naturalPageIds !== null && rows.length > 1) {
+      rows = sortRowsByPageIds(rows, naturalPageIds);
+    }
     const items = (rows || []).map(r => _normalizeListRow(r));
     if (isFavoriteList) {
       for (const item of items) {
