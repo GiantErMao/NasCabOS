@@ -5,6 +5,7 @@ class VideoHomeItemBean {
   final String filename;
   final String firstFilePath;
   final String nfoName;
+  final String nfoNumber;
   final int nfoYear;
   final double nfoScore;
   final String nfoRegions;
@@ -26,6 +27,7 @@ class VideoHomeItemBean {
     required this.filename,
     required this.firstFilePath,
     required this.nfoName,
+    this.nfoNumber = '',
     required this.nfoYear,
     required this.nfoScore,
     required this.nfoRegions,
@@ -48,6 +50,7 @@ class VideoHomeItemBean {
     String? filename,
     String? firstFilePath,
     String? nfoName,
+    String? nfoNumber,
     int? nfoYear,
     double? nfoScore,
     String? nfoRegions,
@@ -69,6 +72,7 @@ class VideoHomeItemBean {
       filename: filename ?? this.filename,
       firstFilePath: firstFilePath ?? this.firstFilePath,
       nfoName: nfoName ?? this.nfoName,
+      nfoNumber: nfoNumber ?? this.nfoNumber,
       nfoYear: nfoYear ?? this.nfoYear,
       nfoScore: nfoScore ?? this.nfoScore,
       nfoRegions: nfoRegions ?? this.nfoRegions,
@@ -99,6 +103,7 @@ class VideoHomeItemBean {
       playFilePath:
           (json['play_file_path'] ?? json['playFilePath'])?.toString() ?? '',
       nfoName: (json['nfo_name'] as String?) ?? '',
+      nfoNumber: (json['nfo_number'] ?? json['nfoNumber'])?.toString() ?? '',
       nfoYear: (json['nfo_year'] as num?)?.toInt() ?? 0,
       nfoScore: (json['nfo_score'] as num?)?.toDouble() ?? 0,
       nfoRegions: (json['nfo_regions'] as String?) ?? '',

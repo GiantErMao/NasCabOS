@@ -31,7 +31,7 @@ function _extractMovieCodeFromFilename(filename) {
 function _getVideoNameSortValue(row) {
   const mediaType = String(row && row.media_type || '').trim().toLowerCase();
   if (mediaType === 'movie' || mediaType === 'bdmv' || mediaType === 'video_ts') {
-    const movieCode = _extractMovieCodeFromFilename(row && row.filename);
+    const movieCode = String(row && row.nfo_number || '').trim() || _extractMovieCodeFromFilename(row && row.filename);
     if (movieCode) {
       const nfoName = String(row && row.nfo_name || '').trim();
       return `${movieCode} ${nfoName || String(row && row.filename || '').trim()}`;
@@ -552,6 +552,7 @@ class VideoListService {
         'v.path',
         'v.filename',
         'v.nfo_name',
+        'v.nfo_number',
         'v.nfo_year',
         'v.nfo_score',
         'v.nfo_regions',
@@ -570,7 +571,7 @@ class VideoListService {
         .clone()
         .clearSelect()
         .clearOrder()
-        .distinct('v.id', 'v.media_type', 'v.nfo_name', 'v.filename');
+        .distinct('v.id', 'v.media_type', 'v.nfo_name', 'v.nfo_number', 'v.filename');
       naturalPageIds = await selectNaturalPageIdsFromQuery(candidateQuery, {
         sortOrder,
         offset,
@@ -671,6 +672,7 @@ class VideoListService {
         'v.path',
         'v.filename',
         'v.nfo_name',
+        'v.nfo_number',
         'v.nfo_year',
         'v.nfo_score',
         'v.nfo_regions',
@@ -733,6 +735,7 @@ class VideoListService {
           'v.path',
           'v.filename',
           'v.nfo_name',
+          'v.nfo_number',
           'v.nfo_year',
           'v.nfo_score',
           'v.nfo_regions',
@@ -771,6 +774,7 @@ class VideoListService {
           'v.path',
           'v.filename',
           'v.nfo_name',
+          'v.nfo_number',
           'v.nfo_year',
           'v.nfo_score',
           'v.nfo_regions',

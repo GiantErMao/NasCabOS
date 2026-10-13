@@ -1,6 +1,6 @@
 # NasCabOS 部署与 Android 构建手册
 
-本文记录本项目已经验证过的发布流程，供后续对话和人工操作直接参考。
+本文分别记录本机部署验证和远端发布流程。文中的实测记录注明执行日期、环境与验证边界；远端发布步骤不会因本机部署成功而自动执行。
 
 ## 1. 当前环境
 
@@ -19,6 +19,41 @@
 | 测试设备 | `e6fc7cb7` |
 
 不要把 SSH 密码、签名密码或私钥写入仓库。本文默认 SSH 已通过交互输入密码或密钥认证。
+
+### 1.1 本机部署记录（2026-10-12）
+
+本次使用当前工作区的未提交源码，在 macOS arm64 上以仓库配套的 Electron 启动服务端，并将 Electron 配置目录和应用数据库隔离到 `/tmp`：
+
+```bash
+cd /Users/bytedance/P4Workspace/NasCabOS/electron_server
+userDataFolder=/tmp/NasCabOS-local-deploy-20261012 \
+    npm start -- --user-data-dir=/tmp/NasCabOS-local-electron-profile-20261012
+```
+
+验证结果：
+
+- Electron 服务端启动成功；HTTP API 监听端口 `6789`，HTTPS 端口 `6799`。
+- `curl -i http://127.0.0.1:6789/health` 返回 `HTTP/1.1 200 OK` 和 `{"success":true,"message":"OK"}`。
+- 临时数据库和 Electron 配置位于上面的 `/tmp` 路径，不使用现有用户数据目录。停止服务在启动终端按 `Ctrl+C`。
+- 系统 Node.js 直接启动不兼容当前 `better-sqlite3` 二进制（模块 ABI 136 与系统 Node ABI 137 不一致）；使用项目的 Electron 启动后正常。
+- 本机 Docker Desktop daemon 可用（27.4.0），但没有现存容器、镜像或仓库 Docker Compose/Dockerfile 部署定义，因此本次未做本机容器部署。
+- Flutter `3.47.6` 使用 `android-arm64`、版本 `1.2.7`、build number `2042` 构建成功。构建产物默认未签名；使用本机 debug keystore 签出的内部测试包为 `flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2042-signed.apk`，SHA-256：`4c633b9fd387b3a8720a65601c6963dc704e0fd68f53d5af29b17316c165138a`。此签名仅供内部测试，不可用于正式发布。
+- 本次 `adb devices -l` 没有列出设备，因此 APK 尚未安装或做设备启动验证。
+- 本次只在本机运行服务和生成 APK，没有向远端服务器上传或发布。
+
+重建 APK 的命令：
+
+```bash
+cd /Users/bytedance/P4Workspace/NasCabOS/flutter_client
+flutter build apk \
+    --release \
+    --target-platform android-arm64 \
+    --build-name=1.2.7 \
+    --build-number=2042 \
+    --android-skip-build-dependency-validation
+```
+
+构建输出 `build/app/outputs/flutter-apk/app-release.apk` 是未签名包。内部测试签名方法见第 10.2 节，安装前需确认已连接授权的 Android 设备，步骤见第 11 节。
 
 ## 2. 发布前检查
 
@@ -393,3 +428,5 @@ adb -s e6fc7cb7 logcat -d |
 - [ ] gzip 完整性和 SHA-256 校验通过。
 - [ ] Compose/Portainer 已记录应使用的自定义镜像。
 - [ ] APK 签名、版本号、安装和启动验证通过。
+
+本清单用于远端正式发布。若只完成本机部署验证，应只勾选已实际完成的本机步骤，并在上面的部署记录中说明设备安装、远端发布等未完成项。

@@ -283,9 +283,74 @@ function _safeJsonStringify(v) {
   }
 }
 
+function _normalizeNfoNumberCandidate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const reverse1Pondo = raw.match(/^(\d{6}[-_]\d{2,4})[-_\s]?1pon(?:do)?$/i);
+  const normalizedRaw = reverse1Pondo ? `1PONDO-${reverse1Pondo[1]}` : raw;
+  const code = normalizedRaw
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase();
+  if (!code) return '';
+
+  const parts = code.split('-');
+  const prefix = parts.length >= 2 ? parts[0].toLowerCase() : (code.match(/^([A-Z]+)\d+$/) || [])[1]?.toLowerCase() || '';
+  const lastNumber = Number(parts.length >= 2 ? parts[parts.length - 1] : (code.match(/(\d+)$/) || [])[1]);
+  if (!prefix) return '';
+  if (!Number.isFinite(lastNumber)) return '';
+
+  const denyPrefixes = new Set(['bd', 'bluray', 'dvd', 'hdr', 'jav', 'remux', 'uhd', 'web', 'webrip']);
+  if (denyPrefixes.has(prefix)) return '';
+
+  if (parts.length < 2 && !/^[A-Z]{1,8}\d{2,8}$/.test(code)) return '';
+
+  return code;
+}
+
+function _extractNfoNumberFromText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  const patterns = [
+    /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?:ch)?(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{1,8}\d{2,8})(?=$|[^0-9a-z])/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    const code = _normalizeNfoNumberCandidate(match && match[2] ? match[2] : '');
+    if (code) return code;
+  }
+
+  return _normalizeNfoNumberCandidate(text);
+}
+
+function _extractNfoNumberFromParsed(parsed) {
+  if (!parsed) return '';
+  const candidates = [
+    parsed.originalTitle,
+    parsed.sortTitle,
+    ...(Array.isArray(parsed.tags) ? parsed.tags : []),
+    ...(Array.isArray(parsed.aliases) ? parsed.aliases : []),
+    parsed.title,
+  ];
+  for (const value of candidates) {
+    const code = _extractNfoNumberFromText(value);
+    if (code) return code;
+  }
+  return '';
+}
+
 function _nfoFieldsFromParsed(parsed) {
   if (!parsed) return null;
   const nfoName = parsed.title ? String(parsed.title) : '';
+  const nfoNumber = _extractNfoNumberFromParsed(parsed);
   const nfoRegions = _safeJoinText(parsed.countries);
   const nfoLanguage = _safeJoinText(parsed.languages);
   const nfoGenres = _safeJoinText(parsed.genres);
@@ -303,6 +368,7 @@ function _nfoFieldsFromParsed(parsed) {
   return {
     nfo_name: nfoName,
     nfo_name_fl: getFirstLetter(nfoName),
+    nfo_number: nfoNumber,
     nfo_alias: nfoAlias,
     nfo_tags: nfoTags,
     nfo_regions: nfoRegions,
@@ -378,6 +444,7 @@ function _emptyNfoFields() {
   return {
     nfo_name: '',
     nfo_name_fl: '',
+    nfo_number: '',
     nfo_alias: '',
     nfo_tags: '',
     nfo_regions: '',

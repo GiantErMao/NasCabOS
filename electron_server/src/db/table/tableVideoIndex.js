@@ -2,6 +2,47 @@ const knexUtil = require('../knexUtil');
 const dbUtil = require('../dbUtil');
 const Logger = require('../../utils/logger');
 
+function _normalizeNfoNumberCandidate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const reverse1Pondo = raw.match(/^(\d{6}[-_]\d{2,4})[-_\s]?1pon(?:do)?$/i);
+  const normalizedRaw = reverse1Pondo ? `1PONDO-${reverse1Pondo[1]}` : raw;
+  const code = normalizedRaw
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase();
+  if (!code) return '';
+
+  const parts = code.split('-');
+  const prefix = parts.length >= 2 ? parts[0].toLowerCase() : (code.match(/^([A-Z]+)\d+$/) || [])[1]?.toLowerCase() || '';
+  const lastNumber = Number(parts.length >= 2 ? parts[parts.length - 1] : (code.match(/(\d+)$/) || [])[1]);
+  if (!prefix) return '';
+  if (!Number.isFinite(lastNumber)) return '';
+  if (new Set(['bd', 'bluray', 'dvd', 'hdr', 'jav', 'remux', 'uhd', 'web', 'webrip']).has(prefix)) return '';
+  if (parts.length < 2 && !/^[A-Z]{1,8}\d{2,8}$/.test(code)) return '';
+  return code;
+}
+
+function _extractNfoNumberFromText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const patterns = [
+    /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?:ch)?(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{1,8}\d{2,8})(?=$|[^0-9a-z])/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    const code = _normalizeNfoNumberCandidate(match && match[2] ? match[2] : '');
+    if (code) return code;
+  }
+  return _normalizeNfoNumberCandidate(text);
+}
+
 class tableVideoIndex {
   constructor() {
     this.tableName = 'video_index';
@@ -22,6 +63,7 @@ class tableVideoIndex {
         table.string('play_rel_path').defaultTo('');
         table.string('nfo_name').defaultTo('');
         table.string('nfo_name_fl').defaultTo('');
+        table.string('nfo_number').defaultTo('');
         table.string('media_type').defaultTo('');
         table.integer('season_count').notNullable().defaultTo(0);
         table.integer('episod_count').notNullable().defaultTo(0);
@@ -66,8 +108,36 @@ class tableVideoIndex {
         Logger.info(`✅ Added ${name} column to table ${this.tableName}`);
       };
       await addColumn('play_rel_path', "TEXT DEFAULT ''");
+      await addColumn('nfo_number', "TEXT DEFAULT ''");
       await addColumn('gen_subtitle_vtt', 'INTEGER NOT NULL DEFAULT 0');
     }
+    await this.backfillNfoNumber({ knex });
+  }
+
+  async backfillNfoNumber({ knex }) {
+    const rows = await knex(this.tableName)
+      .where(builder => {
+        builder.whereNull('nfo_number').orWhere('nfo_number', '');
+      })
+      .where(builder => {
+        builder.whereNotNull('nfo_alias').orWhereNotNull('nfo_tags');
+      })
+      .select('id', 'nfo_alias', 'nfo_tags')
+      .limit(2000)
+      .catch(() => []);
+    let updated = 0;
+    for (const row of rows || []) {
+      const id = Number(row && row.id) || 0;
+      if (!id) continue;
+      const code = _extractNfoNumberFromText(row.nfo_alias) || _extractNfoNumberFromText(row.nfo_tags);
+      if (!code) continue;
+      const n = await knex(this.tableName)
+        .where({ id })
+        .update({ nfo_number: code })
+        .catch(() => 0);
+      if (n) updated += 1;
+    }
+    if (updated > 0) Logger.info(`✅ Backfilled ${updated} nfo_number values in table ${this.tableName}`);
   }
 
   async createIndexes(connection = null) {
@@ -87,6 +157,7 @@ class tableVideoIndex {
       { columns: ['path', 'filename', 'media_type', 'nfo_score'], name: 'idx_video_index_path_filename_media_type_nfo_score', unique: false },
       { columns: ['path', 'filename', 'media_type', 'nfo_director'], name: 'idx_video_index_path_filename_media_type_nfo_director', unique: false },
       { columns: ['path', 'filename', 'media_type', 'nfo_actor'], name: 'idx_video_index_path_filename_media_type_nfo_actor', unique: false },
+      { columns: ['nfo_number'], name: 'idx_video_index_nfo_number', unique: false },
     ];
 
     for (const index of targetIndexes) {

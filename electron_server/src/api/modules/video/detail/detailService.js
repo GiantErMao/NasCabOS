@@ -58,6 +58,16 @@ function _normalizeIndexRow(row) {
   };
 }
 
+function _buildVideoDisplayName(row) {
+  const nfoNumber = String(row && row.nfo_number || '').trim();
+  const nfoName = String(row && row.nfo_name || '').trim();
+  const filename = String(row && row.filename || '').trim();
+  const title = nfoName || filename;
+  if (!nfoNumber || !title) return title;
+  if (title.toLowerCase().includes(nfoNumber.toLowerCase())) return title;
+  return `${nfoNumber} ${title}`;
+}
+
 function _isHiddenDiscContentName(name) {
   const normalizedName = String(name || '').trim();
   return normalizedName.startsWith('.');
@@ -720,7 +730,7 @@ class VideoDetailService {
         playlist: [
           {
             path: String(item.play_file_path),
-            name: (item.nfo_name ? String(item.nfo_name).trim() : '') || (item.filename ? String(item.filename) : ''),
+            name: _buildVideoDisplayName(item),
           },
         ],
         initialIndex: 0,
@@ -748,7 +758,7 @@ class VideoDetailService {
               .where({ path: seasonFolder, is_file: 1, media_type: 'episod' })
               .orderBy('episod_num', 'asc')
               .orderBy('id', 'asc')
-              .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'episod_num')
+              .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'nfo_number', 'episod_num')
               .catch(() => []);
             episodeRows.push(...(rows || []));
           }
@@ -758,7 +768,7 @@ class VideoDetailService {
             .where({ path: showFolder, is_file: 1, media_type: 'episod' })
             .orderBy('episod_num', 'asc')
             .orderBy('id', 'asc')
-            .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'episod_num')
+            .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'nfo_number', 'episod_num')
             .catch(() => []);
           episodeRows = rows || [];
         }
@@ -771,7 +781,7 @@ class VideoDetailService {
           .where({ path: seasonFolder, is_file: 1, media_type: 'episod' })
           .orderBy('episod_num', 'asc')
           .orderBy('id', 'asc')
-          .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'episod_num')
+          .select('id', 'path', 'filename', 'file_hash', 'nfo_name', 'nfo_number', 'episod_num')
           .catch(() => []);
         episodeRows = rows || [];
       }
@@ -802,7 +812,7 @@ class VideoDetailService {
         const normalized = _normalizeIndexRow(r);
         const p = normalized && normalized.full_path ? String(normalized.full_path) : '';
         if (!p) return null;
-        const name = (normalized.nfo_name ? String(normalized.nfo_name).trim() : '') || (normalized.filename ? String(normalized.filename) : '');
+        const name = _buildVideoDisplayName(normalized);
         return { path: p, name };
       })
       .filter(Boolean);

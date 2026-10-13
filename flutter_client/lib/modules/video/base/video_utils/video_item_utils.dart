@@ -36,10 +36,13 @@ String extractVideoCodeFromFilename(String filename) {
 String resolveVideoDisplayTitle({
   required String filename,
   required String nfoName,
+  String nfoNumber = '',
 }) {
   final fallback = filename.trim();
   final title = nfoName.trim().isNotEmpty ? nfoName.trim() : fallback;
-  final code = extractVideoCodeFromFilename(filename);
+  final code = nfoNumber.trim().isNotEmpty
+      ? _normalizeVideoCode(nfoNumber)
+      : extractVideoCodeFromFilename(filename);
   if (code.isEmpty || title.isEmpty) return title;
 
   if (title.toLowerCase().contains(code.toLowerCase())) return title;
@@ -50,13 +53,20 @@ String resolveVideoItemDisplayTitle(VideoHomeItemBean item) {
   return resolveVideoDisplayTitle(
     filename: item.filename,
     nfoName: item.nfoName,
+    nfoNumber: item.nfoNumber,
   );
 }
 
 String resolveVideoMapDisplayTitle(Map<dynamic, dynamic>? item) {
   final filename = (item?['filename']?.toString() ?? '').trim();
   final nfoName = (item?['nfo_name']?.toString() ?? '').trim();
-  return resolveVideoDisplayTitle(filename: filename, nfoName: nfoName);
+  final nfoNumber =
+      (item?['nfo_number'] ?? item?['nfoNumber'])?.toString().trim() ?? '';
+  return resolveVideoDisplayTitle(
+    filename: filename,
+    nfoName: nfoName,
+    nfoNumber: nfoNumber,
+  );
 }
 
 String _normalizeVideoCode(String value) {
@@ -90,7 +100,6 @@ bool _isLikelyVideoCode(String code) {
 
   const resolutionNumbers = {480, 540, 720, 1080, 1440, 2160, 4320};
   if (resolutionNumbers.contains(lastNumber)) return false;
-  if (lastNumber >= 1900 && lastNumber <= 2099) return false;
 
   return true;
 }
