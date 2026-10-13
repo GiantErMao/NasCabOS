@@ -114,6 +114,8 @@ dependencies:
   fvp: ^0.38.1
 
 dependency_overrides:
+  # image 4.11.0 uses decodeLazy, which is unavailable in archive 4.0.9.
+  image: 4.10.2
   # 覆盖 pub 版：修复 Android MediaSession.onPlayPause 未转发（桌面小组件/部分系统播放暂停键无响应）
   audio_service:
     path: packages/audio_service

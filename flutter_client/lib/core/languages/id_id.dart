@@ -1357,6 +1357,8 @@ class IdId extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Cari Nama',
+      'video_list_large_cards': 'Kartu besar (poster)',
+      'video_list_standard_cards': 'Kartu standar',
       'video_list_cover_size': 'Ukuran sampul',
       'filter': 'Filter',
       'video_list_filter_years': 'Tahun',

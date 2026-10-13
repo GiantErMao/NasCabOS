@@ -64,6 +64,7 @@ class tableVideoIndex {
         table.string('nfo_name').defaultTo('');
         table.string('nfo_name_fl').defaultTo('');
         table.string('nfo_number').defaultTo('');
+        table.string('nfo_source').defaultTo('');
         table.string('media_type').defaultTo('');
         table.integer('season_count').notNullable().defaultTo(0);
         table.integer('episod_count').notNullable().defaultTo(0);
@@ -109,9 +110,39 @@ class tableVideoIndex {
       };
       await addColumn('play_rel_path', "TEXT DEFAULT ''");
       await addColumn('nfo_number', "TEXT DEFAULT ''");
+      if (!colNames.has('nfo_source')) {
+        await knex.transaction(async trx => {
+          await trx.raw(`ALTER TABLE ${this.tableName} ADD COLUMN nfo_source TEXT DEFAULT ''`);
+          await this.backfillNfoSource({ knex: trx });
+        });
+        Logger.info(`✅ Added nfo_source column to table ${this.tableName}`);
+      }
       await addColumn('gen_subtitle_vtt', 'INTEGER NOT NULL DEFAULT 0');
     }
     await this.backfillNfoNumber({ knex });
+  }
+
+  async backfillNfoSource({ knex }) {
+    const path = require('path');
+    const { readAndParseNfo } = require('../../workers/videoIndex/nfoParser');
+    const rows = await knex(this.tableName).whereIn('media_type', ['movie', 'bdmv', 'video_ts']).select('id', 'path', 'filename', 'media_type');
+    let updated = 0;
+    for (const row of rows) {
+      const dir = row.media_type === 'movie' ? row.path : path.join(row.path, row.filename);
+      const candidates = row.media_type === 'movie'
+        ? [path.join(dir, `${path.parse(row.filename).name}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${path.basename(dir)}.nfo`)]
+        : [path.join(dir, 'movie.nfo'), path.join(dir, `${row.filename}.nfo`)];
+      for (const nfoPath of candidates) {
+        const parsed = await readAndParseNfo(nfoPath);
+        if (!parsed) continue;
+        if (parsed.type === 'movie' && parsed.metadataSource === 'metatube') {
+          await knex(this.tableName).where({ id: row.id }).update({ nfo_source: 'metatube' });
+          updated++;
+        }
+        break;
+      }
+    }
+    if (updated > 0) Logger.info(`✅ Backfilled ${updated} MetaTube source values in table ${this.tableName}`);
   }
 
   async backfillNfoNumber({ knex }) {

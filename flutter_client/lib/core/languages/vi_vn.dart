@@ -1347,6 +1347,8 @@ class ViVn extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Tìm kiếm tên',
+      'video_list_large_cards': 'Thẻ lớn (áp phích)',
+      'video_list_standard_cards': 'Thẻ tiêu chuẩn',
       'video_list_cover_size': 'Kích thước bìa',
       'filter': 'Lọc',
       'video_list_filter_years': 'Năm',

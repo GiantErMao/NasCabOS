@@ -11,17 +11,24 @@ class VideoListGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       final posterScale = controller.posterScale.value;
+      final largeCard = controller.largeCardView.value;
       return SliverLayoutBuilder(
         builder: (context, constraints) {
           final maxWidth = constraints.crossAxisExtent;
-          final baseWidth = maxWidth < 520 ? 150.0 : 176.0;
+          final baseWidth = largeCard
+              ? (maxWidth < 520 ? 240.0 : 300.0)
+              : (maxWidth < 520 ? 150.0 : 176.0);
           final desiredWidth = baseWidth * posterScale;
-          final crossAxisCount = (maxWidth / desiredWidth).floor().clamp(2, 10);
+          final crossAxisCount = (maxWidth / desiredWidth).floor().clamp(
+            largeCard ? 1 : 2,
+            largeCard ? 5 : 10,
+          );
           final spacing = maxWidth < 520 ? 12.0 : 15.0;
           final totalSpacing = spacing * (crossAxisCount - 1);
           final itemWidth = ((maxWidth - totalSpacing) / crossAxisCount)
               .floorToDouble();
-          final estimatedHeight = itemWidth * 1.5 + 60;
+          final estimatedHeight =
+              itemWidth * (largeCard ? 9 / 16 : 1.5) + (largeCard ? 84 : 60);
           final aspectRatio = itemWidth / estimatedHeight;
 
           return SliverGrid(
@@ -30,6 +37,7 @@ class VideoListGrid extends StatelessWidget {
               return VideoItemPoster(
                 contentPadding: EdgeInsets.zero,
                 item: item,
+                largeCard: largeCard,
                 width: itemWidth,
                 progress: null,
                 currentAlbumId: controller.albumId,

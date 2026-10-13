@@ -26,6 +26,7 @@ class VideoItemCoverImage extends StatelessWidget {
   final double rating;
   final String typeText;
   final bool hovered;
+  final BoxFit fit;
 
   const VideoItemCoverImage({
     super.key,
@@ -34,6 +35,7 @@ class VideoItemCoverImage extends StatelessWidget {
     required this.rating,
     required this.typeText,
     required this.hovered,
+    this.fit = BoxFit.cover,
   });
 
   @override
@@ -52,6 +54,11 @@ class VideoItemCoverImage extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            ColoredBox(
+              color: fit == BoxFit.contain
+                  ? Colors.black
+                  : theme.colorScheme.surfaceContainerHighest,
+            ),
             if (imageUrl.isNotEmpty)
               AnimatedScale(
                 scale: scale,
@@ -59,7 +66,7 @@ class VideoItemCoverImage extends StatelessWidget {
                 curve: Curves.easeOutCubic,
                 child: CustomExtendedImage(
                   imageUrl: imageUrl,
-                  fit: BoxFit.cover,
+                  fit: fit,
                   showLoading: false,
                   borderRadius: borderRadius,
                 ),

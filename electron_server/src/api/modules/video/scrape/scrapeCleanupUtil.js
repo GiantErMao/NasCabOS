@@ -260,6 +260,7 @@ function _buildClearNfoPatch() {
     nfo_name: '',
     nfo_name_fl: '',
     nfo_number: '',
+    nfo_source: '',
     nfo_alias: '',
     nfo_tags: '',
     nfo_regions: '',

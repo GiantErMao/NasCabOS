@@ -1,6 +1,5 @@
 import 'package:NasCabOS/core/routes/app_routes.dart';
 import 'package:NasCabOS/core/theme/custom_colors.dart';
-import 'package:NasCabOS/core/user/current_user_controller.dart';
 import 'package:NasCabOS/modules/base/components/custom_bordered_icon_button.dart';
 import 'package:NasCabOS/modules/base/components/custom_expandable_search_bar.dart';
 import 'package:NasCabOS/modules/video/base/views/app_video_item_poster.dart';
@@ -373,6 +372,20 @@ class _AppVideoListPageState extends State<AppVideoListPage> {
                           }),
                           const SizedBox(width: 6),
                           Obx(() {
+                            final large = ctrl.largeCardView.value;
+                            return CustomBorderedIconButton(
+                              icon: large
+                                  ? Icons.view_module_outlined
+                                  : Icons.view_agenda_outlined,
+                              onTap: ctrl.toggleCardView,
+                              tooltip: large
+                                  ? 'video_list_standard_cards'.tr
+                                  : 'video_list_large_cards'.tr,
+                              active: large,
+                            );
+                          }),
+                          const SizedBox(width: 6),
+                          Obx(() {
                             return CustomBorderedIconButton(
                               icon: Icons.source_outlined,
                               onTap: () => _openSourceSheet(ctrl),
@@ -450,17 +463,24 @@ class _AppVideoListGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       final posterScale = controller.posterScale.value;
+      final largeCard = controller.largeCardView.value;
       return SliverLayoutBuilder(
         builder: (context, constraints) {
           final maxWidth = constraints.crossAxisExtent;
-          final baseWidth = maxWidth < 420 ? 120.0 : 140.0;
+          final baseWidth = largeCard
+              ? (maxWidth < 420 ? 210.0 : 260.0)
+              : (maxWidth < 420 ? 120.0 : 140.0);
           final desiredWidth = baseWidth * posterScale;
-          final crossAxisCount = (maxWidth / desiredWidth).floor().clamp(2, 6);
+          final crossAxisCount = (maxWidth / desiredWidth).floor().clamp(
+            largeCard ? 1 : 2,
+            largeCard ? 4 : 6,
+          );
           final spacing = maxWidth < 420 ? 10.0 : 12.0;
           final totalSpacing = spacing * (crossAxisCount - 1);
           final itemWidth = ((maxWidth - totalSpacing) / crossAxisCount)
               .floorToDouble();
-          final estimatedHeight = itemWidth * 1.5 + 54;
+          final estimatedHeight =
+              itemWidth * (largeCard ? 9 / 16 : 1.5) + (largeCard ? 82 : 54);
           final aspectRatio = itemWidth / estimatedHeight;
 
           return SliverGrid(
@@ -469,6 +489,7 @@ class _AppVideoListGrid extends StatelessWidget {
                 final item = controller.items[idx];
                 return AppVideoItemPoster(
                   item: item,
+                  largeCard: largeCard,
                   width: itemWidth,
                   progress: null,
                   onDeleted: (deleted) {

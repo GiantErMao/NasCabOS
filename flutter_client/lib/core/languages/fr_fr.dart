@@ -1410,6 +1410,8 @@ class FrFr extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Rechercher titre',
+      'video_list_large_cards': 'Grandes cartes (affiches)',
+      'video_list_standard_cards': 'Cartes standard',
       'video_list_cover_size': 'Taille de couverture',
       'filter': 'Filtre',
       'video_list_filter_years': 'Année',

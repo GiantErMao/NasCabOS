@@ -1197,6 +1197,8 @@ class ZhCn extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': '搜索名称',
+      'video_list_large_cards': '大卡片（海报）',
+      'video_list_standard_cards': '标准卡片',
       'video_list_cover_size': '封面尺寸',
       'filter': '筛选',
       'video_list_filter_years': '年份',
@@ -1622,7 +1624,8 @@ class ZhCn extends Translations {
       'video_nfo_translate_enable': '元数据翻译为中文',
       'video_nfo_translate_enable_tip': '刮削后自动翻译简介和类型；翻译失败时保留原文',
       'video_nfo_translate_api_url': '翻译服务地址',
-      'video_nfo_translate_api_url_hint': '可选，LibreTranslate 兼容地址，如 http://host:5000',
+      'video_nfo_translate_api_url_hint':
+          '可选，LibreTranslate 兼容地址，如 http://host:5000',
       'video_nfo_translate_api_key': '翻译服务 API Key',
       'video_nfo_translate_api_key_hint': '可选，不填则不携带 Key',
       'video_nfo_translate_title_enable': '同时翻译标题',

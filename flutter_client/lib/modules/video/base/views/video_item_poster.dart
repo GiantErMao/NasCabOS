@@ -13,6 +13,7 @@ class VideoItemPoster extends StatefulWidget {
   final double imageRadius;
   final EdgeInsets contentPadding;
   final double? progress;
+  final bool largeCard;
   final int? currentAlbumId;
   final VoidCallback? onRemovedFromCurrentAlbum;
   final VoidCallback? onTap;
@@ -28,6 +29,7 @@ class VideoItemPoster extends StatefulWidget {
     this.imageRadius = 12,
     this.contentPadding = const EdgeInsets.all(10),
     this.progress,
+    this.largeCard = false,
     this.currentAlbumId,
     this.onRemovedFromCurrentAlbum,
     this.onTap,
@@ -95,7 +97,9 @@ class _VideoItemPosterState extends State<VideoItemPoster> {
     final item = widget.item;
     final title = resolveVideoItemDisplayTitle(item);
     final year = item.nfoYear > 0 ? item.nfoYear.toString() : '';
-    final posterUrl = VideoUtils.getPosterUrl(item, size: 500);
+    final posterUrl = widget.largeCard
+        ? VideoUtils.getLargeCardPosterUrl(item)
+        : VideoUtils.getPosterUrl(item, size: 500);
 
     final p = widget.progress;
     final safeProgress = p?.clamp(0, 1).toDouble();
@@ -122,7 +126,7 @@ class _VideoItemPosterState extends State<VideoItemPoster> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   AspectRatio(
-                    aspectRatio: 2 / 3,
+                    aspectRatio: widget.largeCard ? 16 / 9 : 2 / 3,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -132,6 +136,7 @@ class _VideoItemPosterState extends State<VideoItemPoster> {
                           rating: item.nfoScore,
                           typeText: videoMediaTypeText(item.mediaType),
                           hovered: _hovered,
+                          fit: BoxFit.cover,
                         ),
                         if (_hovered || _effectiveFavorite)
                           Positioned(
@@ -211,7 +216,7 @@ class _VideoItemPosterState extends State<VideoItemPoster> {
                       child: Text(
                         title,
                         textAlign: TextAlign.center,
-                        maxLines: 1,
+                        maxLines: widget.largeCard ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium,
                       ),

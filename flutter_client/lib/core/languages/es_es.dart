@@ -1401,6 +1401,8 @@ class EsEs extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Buscar título',
+      'video_list_large_cards': 'Tarjetas grandes (pósteres)',
+      'video_list_standard_cards': 'Tarjetas estándar',
       'video_list_cover_size': 'Tamaño de portada',
       'filter': 'Filtrar',
       'video_list_filter_years': 'Año',

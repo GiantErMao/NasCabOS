@@ -31,7 +31,7 @@ class VideoDetailTopSection extends StatelessWidget {
         .toLowerCase();
     final resolvedMediaType = rawMediaType == 'season' ? 'tv' : rawMediaType;
     final logo = (m['logo_path']?.toString() ?? '').trim();
-    final fanartUrl = VideoUtils.getFanartUrl(
+    final fanartUrl = VideoUtils.getDetailImageUrl(
       VideoHomeItemBean.fromJson(Map<String, dynamic>.from(m as Map)),
       size: 1000,
     );

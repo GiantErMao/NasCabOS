@@ -1402,6 +1402,8 @@ class PtBr extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Pesquisar título',
+      'video_list_large_cards': 'Cartões grandes (pôsteres)',
+      'video_list_standard_cards': 'Cartões padrão',
       'video_list_cover_size': 'Tamanho da capa',
       'filter': 'Filtrar',
       'video_list_filter_years': 'Ano',

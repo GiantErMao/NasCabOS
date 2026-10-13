@@ -24,6 +24,7 @@ class AppVideoItemPoster extends StatelessWidget {
   final double borderRadius;
   final double imageRadius;
   final double? progress;
+  final bool largeCard;
   final ValueChanged<VideoHomeItemBean>? onDeleted;
   final ValueChanged<bool>? onFavoriteChanged;
   final int? currentAlbumId;
@@ -36,6 +37,7 @@ class AppVideoItemPoster extends StatelessWidget {
     this.borderRadius = 14,
     this.imageRadius = 12,
     this.progress,
+    this.largeCard = false,
     this.onDeleted,
     this.onFavoriteChanged,
     this.currentAlbumId,
@@ -401,7 +403,9 @@ class AppVideoItemPoster extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = resolveVideoItemDisplayTitle(item);
-    final posterUrl = VideoUtils.getPosterUrl(item, size: 500);
+    final posterUrl = largeCard
+        ? VideoUtils.getLargeCardPosterUrl(item)
+        : VideoUtils.getPosterUrl(item, size: 500);
     final safeProgress = progress?.clamp(0, 1).toDouble();
     final rating = item.nfoScore;
     final typeText = videoMediaTypeText(item.mediaType);
@@ -421,22 +425,27 @@ class AppVideoItemPoster extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AspectRatio(
-              aspectRatio: 2 / 3,
+              aspectRatio: largeCard ? 16 / 9 : 2 / 3,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(imageRadius),
-                    child: posterUrl.isNotEmpty
-                        ? CustomExtendedImage(
-                            imageUrl: posterUrl,
-                            fit: BoxFit.cover,
-                            borderRadius: imageRadius,
-                            showLoading: false,
-                          )
-                        : ColoredBox(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                          ),
+                    child: ColoredBox(
+                      color: largeCard
+                          ? Colors.black
+                          : theme.colorScheme.surfaceContainerHighest,
+                      child: posterUrl.isNotEmpty
+                          ? CustomExtendedImage(
+                              imageUrl: posterUrl,
+                              fit: BoxFit.cover,
+                              borderRadius: imageRadius,
+                              showLoading: false,
+                            )
+                          : ColoredBox(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                            ),
+                    ),
                   ),
                   Positioned.fill(
                     child: DecoratedBox(
@@ -561,7 +570,7 @@ class AppVideoItemPoster extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               title,
-              maxLines: 1,
+              maxLines: largeCard ? 2 : 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.w600,

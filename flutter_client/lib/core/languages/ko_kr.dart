@@ -1242,6 +1242,8 @@ class KoKr extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': '이름 검색',
+      'video_list_large_cards': '큰 카드 (포스터)',
+      'video_list_standard_cards': '기본 카드',
       'video_list_cover_size': '커버 크기',
       'filter': '필터',
       'video_list_filter_years': '연도',

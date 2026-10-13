@@ -35,7 +35,7 @@ class AppVideoDetailTopSection extends StatelessWidget {
         (m['episode_count'] as num?)?.toInt() ??
         (m['episod_count'] as num?)?.toInt() ??
         0;
-    final fanartUrl = VideoUtils.getFanartUrl(
+    final fanartUrl = VideoUtils.getDetailImageUrl(
       VideoHomeItemBean.fromJson(Map<String, dynamic>.from(m as Map)),
       size: 1000,
     );

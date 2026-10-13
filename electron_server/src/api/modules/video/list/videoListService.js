@@ -34,7 +34,9 @@ function _getVideoNameSortValue(row) {
     const movieCode = String(row && row.nfo_number || '').trim() || _extractMovieCodeFromFilename(row && row.filename);
     if (movieCode) {
       const nfoName = String(row && row.nfo_name || '').trim();
-      return `${movieCode} ${nfoName || String(row && row.filename || '').trim()}`;
+      const title = nfoName || String(row && row.filename || '').trim();
+      if (title.toLowerCase().includes(movieCode.toLowerCase())) return title;
+      return `${movieCode} ${title}`;
     }
   }
   const nfoName = String(row && row.nfo_name || '').trim();
@@ -553,6 +555,7 @@ class VideoListService {
         'v.filename',
         'v.nfo_name',
         'v.nfo_number',
+        'v.nfo_source',
         'v.nfo_year',
         'v.nfo_score',
         'v.nfo_regions',
@@ -673,6 +676,7 @@ class VideoListService {
         'v.filename',
         'v.nfo_name',
         'v.nfo_number',
+        'v.nfo_source',
         'v.nfo_year',
         'v.nfo_score',
         'v.nfo_regions',
@@ -736,6 +740,7 @@ class VideoListService {
           'v.filename',
           'v.nfo_name',
           'v.nfo_number',
+          'v.nfo_source',
           'v.nfo_year',
           'v.nfo_score',
           'v.nfo_regions',
@@ -775,6 +780,7 @@ class VideoListService {
           'v.filename',
           'v.nfo_name',
           'v.nfo_number',
+          'v.nfo_source',
           'v.nfo_year',
           'v.nfo_score',
           'v.nfo_regions',

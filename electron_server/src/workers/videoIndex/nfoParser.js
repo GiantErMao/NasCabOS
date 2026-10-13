@@ -177,6 +177,7 @@ function parseNfoXml(xml) {
     })();
 
   const tmdbId = _pickUniqueId(root, 'tmdb');
+  const metadataSource = (_pickUniqueId(root, 'metatube') || /^[^:]+:.+$/.test(tmdbId)) ? 'metatube' : '';
 
   const actorsDetailed = _pickPeopleObjects(root.actor);
   const directorsDetailed = _pickPeopleObjects(root.director);
@@ -205,6 +206,7 @@ function parseNfoXml(xml) {
     languages,
     imdbId,
     tmdbId,
+    metadataSource,
     actors,
     directors,
     actorsDetailed,

@@ -245,6 +245,20 @@ class _VideoListTopBarState extends State<VideoListTopBar> {
                       );
                     }),
                     const SizedBox(width: 8),
+                    Obx(() {
+                      final large = controller.largeCardView.value;
+                      return CustomBorderedIconButton(
+                        icon: large
+                            ? Icons.view_module_outlined
+                            : Icons.view_agenda_outlined,
+                        tooltip: large
+                            ? 'video_list_standard_cards'.tr
+                            : 'video_list_large_cards'.tr,
+                        active: large,
+                        onTap: controller.toggleCardView,
+                      );
+                    }),
+                    const SizedBox(width: 8),
                     // 封面缩放
                     Obx(() {
                       final scale = controller.posterScale.value;

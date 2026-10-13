@@ -1230,6 +1230,8 @@ class JaJp extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'タイトルを検索',
+      'video_list_large_cards': '大きいカード（ポスター）',
+      'video_list_standard_cards': '標準カード',
       'video_list_cover_size': 'カバーサイズ',
       'filter': 'フィルター',
       'video_list_filter_years': '年',

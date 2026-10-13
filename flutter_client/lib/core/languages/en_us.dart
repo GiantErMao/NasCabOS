@@ -1369,6 +1369,8 @@ class EnUs extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Search title',
+      'video_list_large_cards': 'Large cards (posters)',
+      'video_list_standard_cards': 'Standard cards',
       'video_list_cover_size': 'Cover size',
       'filter': 'Filter',
       'video_list_filter_years': 'Year',
@@ -1791,7 +1793,8 @@ class EnUs extends Translations {
       'video_nfo_translate_api_url_hint':
           'Optional LibreTranslate-compatible URL, such as http://host:5000',
       'video_nfo_translate_api_key': 'Translation service API key',
-      'video_nfo_translate_api_key_hint': 'Optional. Leave empty to send no key.',
+      'video_nfo_translate_api_key_hint':
+          'Optional. Leave empty to send no key.',
       'video_nfo_translate_title_enable': 'Also translate title',
       'video_nfo_translate_title_enable_tip':
           'When disabled, title and sort title stay unchanged.',

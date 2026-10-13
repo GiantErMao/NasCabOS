@@ -1396,6 +1396,8 @@ class DeDe extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'Titel suchen',
+      'video_list_large_cards': 'Große Karten (Poster)',
+      'video_list_standard_cards': 'Standardkarten',
       'video_list_cover_size': 'Covergröße',
       'filter': 'Filter',
       'video_list_filter_years': 'Jahr',

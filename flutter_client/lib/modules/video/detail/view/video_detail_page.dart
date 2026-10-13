@@ -58,7 +58,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         final title = resolveVideoMapDisplayTitle(m as Map?);
         final bgUrl = m == null
             ? ''
-            : VideoUtils.getFanartUrl(
+            : VideoUtils.getDetailImageUrl(
                 VideoHomeItemBean.fromJson(Map<String, dynamic>.from(m as Map)),
                 size: 1000,
               );

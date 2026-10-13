@@ -22,6 +22,7 @@ const videoIndexIndexUtil = require('../videoIndexIndexUtil');
 const { readAndParseNfo, hasValidNfo } = require('../nfoParser');
 const { parseSeasonNumberFromName, parseEpisodeFromName, normalizeNameForNfoGuess } = require('../videoIndexUtil');
 const tmdbUtil = require('./tmdbUtil');
+const { extractMetaTubeNumberQueryFromText: _extractMetaTubeNumberQueryFromText, normalizeComparableMetaTubeNumber: _normalizeComparableMetaTubeNumber } = require('./metatubeNumber');
 function _pickYearFromText(s) {
   const m = String(s || '').match(/\b(19|20)\d{2}\b/);
   const y = m ? Number(m[0]) : 0;
@@ -45,62 +46,6 @@ function _normalizeSearchTitleFromFileName(filename) {
 function _extractMetaTubeNumberQueryFromFilename(filename) {
   const base = path.parse(String(filename || '')).name;
   return _extractMetaTubeNumberQueryFromText(base);
-}
-
-function _extractMetaTubeNumberQueryFromText(text) {
-  const base = String(text || '').trim();
-  if (!base) return '';
-
-  const patterns = [
-    /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/ig,
-    /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/ig,
-    /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/ig,
-    /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?=$|[^0-9a-z])/ig,
-  ];
-
-  for (const pattern of patterns) {
-    for (const match of base.matchAll(pattern)) {
-      const code = _normalizeMetaTubeNumberQuery(match && match[2] ? match[2] : '');
-      if (_isLikelyMetaTubeNumber(code)) return code;
-    }
-  }
-
-  return '';
-}
-
-function _normalizeMetaTubeNumberQuery(value) {
-  const raw = String(value || '').trim();
-  const reverse1Pondo = raw.match(/^(\d{6}[-_]\d{2,4})[-_\s]?1pon(?:do)?$/i);
-  if (reverse1Pondo) return `1PONDO-${reverse1Pondo[1]}`;
-  return raw
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .toUpperCase();
-}
-
-function _normalizeComparableMetaTubeNumber(value) {
-  return _normalizeMetaTubeNumberQuery(value).replace(/[^A-Z0-9]/g, '');
-}
-
-function _isLikelyMetaTubeNumber(code) {
-  const s = String(code || '').trim();
-  if (!s) return false;
-
-  const parts = s.split(/[-_]/);
-  if (parts.length < 2) return false;
-
-  const prefix = String(parts[0] || '').toLowerCase();
-  const lastNumber = Number(parts[parts.length - 1] || 0) || 0;
-  if (!lastNumber) return false;
-
-  const denyPrefixes = new Set(['bd', 'bluray', 'dvd', 'hdr', 'remux', 'uhd', 'web', 'webrip']);
-  if (denyPrefixes.has(prefix)) return false;
-
-  const resolutionNumbers = new Set([480, 540, 720, 1080, 1440, 2160, 4320]);
-  if (resolutionNumbers.has(lastNumber)) return false;
-
-  return true;
 }
 
 const _SKIP_NAME_HINTS = ['img_', 'video_', 'vid_', 'samsung_', 'short_', 'clip_', 'weixin_', 'wx_', 'dsc_', 'douyin_', 'xiaohongshu_', 'baiduyun_', 'mmexport'];
@@ -262,7 +207,8 @@ function _pickDateText(v) {
   const s = String(v || '').trim();
   if (!s) return '';
   const m = s.match(/^\d{4}-\d{2}-\d{2}/);
-  return m ? m[0] : '';
+  const year = m ? Number(m[0].slice(0, 4)) : 0;
+  return year >= 1900 && year <= 2100 ? m[0] : '';
 }
 
 function _mapMetaTubeMovieToNfo(movie) {
@@ -753,6 +699,11 @@ class NfoFetchRunner {
 
     let nfoData = _mapMetaTubeMovieToNfo(details);
     nfoData = await this.translateNfoData(nfoData);
+    // Add the number after translation so title translation cannot alter it.
+    const number = details.number ? String(details.number).trim() : '';
+    if (number && details.title && String(details.title).trim()) {
+      nfoData.title = `${number} ${nfoData.title}`;
+    }
     const baseName = path.parse(filename).name;
     const targetDir = isDiscFolderMovie ? movieFolder : dirPath;
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
@@ -805,21 +756,30 @@ class NfoFetchRunner {
     const provider = parsed.provider || this.metatubeProvider;
     const movieId = parsed.id;
     if (!provider || !movieId) return false;
+    const expectedNumber =
+      _extractMetaTubeNumberQueryFromFilename(row && row.filename) ||
+      _extractMetaTubeNumberQueryFromText(path.basename(String(row && row.path || '')));
+    const expectedKey = _normalizeComparableMetaTubeNumber(expectedNumber);
     const details = await this.metatube.getMovieDetails(provider, movieId).catch(e => {
       Logger.warn(`[nfoFetch] MetaTube detail failed: provider=${provider} id=${movieId}`, e && e.message ? e.message : e);
       return null;
     });
-    if (details) return await this._writeMetaTubeMovieRow(row, details);
+    if (details && (!expectedKey || _normalizeComparableMetaTubeNumber(details.number) === expectedKey)) {
+      return await this._writeMetaTubeMovieRow(row, details);
+    }
+    if (details && expectedKey) Logger.warn(`[nfoFetch] MetaTube selected detail number mismatches file: expected=${expectedNumber} provider=${provider} id=${movieId}`);
 
     const results = await this.metatube
       .searchMovie({
-        query: movieId,
-        provider: '',
+        query: expectedNumber || movieId,
+        provider,
         fallback: this.metatubeFallback,
       })
       .catch(() => []);
-    const candidates = (Array.isArray(results) ? results : []).filter(item => String(item && item.id ? item.id : '').trim() === movieId);
-    const picked = await this._pickMetaTubeMovieWithDetails(candidates.length > 0 ? candidates : results);
+    const candidates = (Array.isArray(results) ? results : []).filter(item =>
+      String(item && item.id || '').trim() === movieId &&
+      String(item && item.provider || '').trim().toLowerCase() === provider.toLowerCase());
+    const picked = await this._pickMetaTubeMovieWithDetails(candidates, expectedNumber);
     return await this._writeMetaTubeMovieRow(row, picked);
   }
 
@@ -829,7 +789,10 @@ class NfoFetchRunner {
     const expectedKey = _normalizeComparableMetaTubeNumber(expectedNumber);
     let candidates = all;
     if (expectedKey) {
-      candidates = all.filter(item => _normalizeComparableMetaTubeNumber(item && item.number) === expectedKey);
+      const exact = all.filter(item => _normalizeComparableMetaTubeNumber(item && item.number) === expectedKey);
+      // Search results may omit the number; validate it after fetching details.
+      const missingNumber = all.filter(item => !String(item && item.number || '').trim());
+      candidates = [...exact, ...missingNumber];
       if (candidates.length === 0) {
         Logger.warn(`[nfoFetch] MetaTube exact number not found; refusing unrelated results: query=${expectedNumber}`);
         return null;
@@ -850,6 +813,11 @@ class NfoFetchRunner {
         return null;
       });
       const merged = _mergeMetaTubeMovie(item, details);
+      if (!details && !String(item && item.number || '').trim()) continue;
+      if (expectedKey && _normalizeComparableMetaTubeNumber(merged.number) !== expectedKey) {
+        Logger.warn(`[nfoFetch] MetaTube detail number mismatch; refusing result: query=${expectedNumber} provider=${provider} id=${movieId}`);
+        continue;
+      }
       const score = _scoreMetaTubeMovie(merged);
       if (score > bestScore) {
         best = merged;

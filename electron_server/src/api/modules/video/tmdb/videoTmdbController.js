@@ -7,6 +7,7 @@ const nascabAccountUtil = require('../../service/utils/nascabAccountUtil');
 const config = require('../../../../config/config');
 const { TmdbClient } = require('../../../../workers/videoIndex/nfoFetchWorker/tmdbClient');
 const { MetaTubeClient, DEFAULT_METATUBE_BASE_URL, normalizeMetaTubeBaseUrl, parseMetaTubeScrapeId, buildMetaTubeScrapeId } = require('../../../../workers/videoIndex/nfoFetchWorker/metatubeClient');
+const { filterMetaTubeMovieSearchResults } = require('../../../../workers/videoIndex/nfoFetchWorker/metatubeNumber');
 
 function _normalizeToTmdbLanguage(locale) {
   const raw = String(locale || '').trim();
@@ -284,7 +285,7 @@ class VideoTmdbController {
           provider: meta.config.provider,
           fallback: meta.config.fallback,
         });
-        const list = Array.isArray(raw) ? raw : [];
+        const list = await filterMetaTubeMovieSearchResults(meta.client, raw, query, meta.config.provider);
         const results = list.map(_mapMetaTubeMovieResult).filter(e => e && e.id);
         return ResponseUtil.success(req, res, { page: 1, total_pages: results.length > 0 ? 1 : 0, results }, 'common.SUCCESS', 200);
       }

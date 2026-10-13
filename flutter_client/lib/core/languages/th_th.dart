@@ -1305,6 +1305,8 @@ class ThTh extends Translations {
       'file_share_server_http': 'HTTP',
       'file_share_server_https': 'HTTPS',
       'video_list_search_hint': 'ค้นหาชื่อ',
+      'video_list_large_cards': 'การ์ดขนาดใหญ่ (โปสเตอร์)',
+      'video_list_standard_cards': 'การ์ดมาตรฐาน',
       'video_list_cover_size': 'ขนาดปก',
       'filter': 'กรอง',
       'video_list_filter_years': 'ปี',

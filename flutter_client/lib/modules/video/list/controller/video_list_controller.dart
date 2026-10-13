@@ -26,10 +26,7 @@ class VideoListSourceFilterStorage {
   static const String _cacheKeyPrefix = 'video_list_selected_source_paths';
   final CacheManager _cacheManager = CacheManager();
 
-  String _buildCacheKey({
-    required String listType,
-    required String mediaType,
-  }) {
+  String _buildCacheKey({required String listType, required String mediaType}) {
     final lt = listType.trim().isEmpty ? 'default' : listType.trim();
     final mt = mediaType.trim().isEmpty ? 'all' : mediaType.trim();
     return '${_cacheKeyPrefix}_${lt}_$mt';
@@ -116,6 +113,7 @@ class VideoListController extends GetxController {
   static const String _keySortBy = 'video_list_sort_by';
   static const String _keySortOrder = 'video_list_sort_order';
   static const String _keyPosterScale = 'video_list_poster_scale';
+  static const String _keyLargeCardView = 'video_list_large_card_view';
   static double posterScaleMin = DeviceUtils.isMobile ? 0.9 : 0.7;
   static double posterScaleMax = DeviceUtils.isMobile ? 1.6 : 1.4;
   static const double posterScaleStep = 0.1;
@@ -184,6 +182,7 @@ class VideoListController extends GetxController {
   final Rx<VideoListSortBy> sortBy = VideoListSortBy.viewTime.obs;
   final Rx<VideoListSortOrder> sortOrder = VideoListSortOrder.desc.obs;
   final RxDouble posterScale = sharedPosterScale;
+  final RxBool largeCardView = false.obs;
 
   bool get hasActiveFilters =>
       genres.isNotEmpty ||
@@ -326,6 +325,25 @@ class VideoListController extends GetxController {
     ensureSharedPosterScaleLoaded();
   }
 
+  void _loadCardView() {
+    try {
+      largeCardView.value =
+          CacheManager().getString(_keyLargeCardView) == 'large';
+    } catch (_) {
+      largeCardView.value = false;
+    }
+  }
+
+  void toggleCardView() {
+    largeCardView.value = !largeCardView.value;
+    try {
+      CacheManager().setString(
+        _keyLargeCardView,
+        largeCardView.value ? 'large' : 'standard',
+      );
+    } catch (_) {}
+  }
+
   void _savePosterScale() {
     try {
       final normalized = normalizePosterScale(posterScale.value);
@@ -347,6 +365,7 @@ class VideoListController extends GetxController {
     }
     _loadSortSettings();
     _loadPosterScale();
+    _loadCardView();
     genres.assignAll(
       initialGenres.map((e) => e.trim()).where((e) => e.isNotEmpty),
     );
@@ -402,8 +421,9 @@ class VideoListController extends GetxController {
         actors: actors.toList(),
         directors: directors.toList(),
         years: selectedYears.toList(),
-        sourceList:
-            requestedSelectedPaths.isEmpty ? null : requestedSelectedPaths,
+        sourceList: requestedSelectedPaths.isEmpty
+            ? null
+            : requestedSelectedPaths,
         sortBy: _toSortByParam(sortBy.value),
         sortOrder: _toSortOrderParam(sortOrder.value),
         showLoading: showLoading,
@@ -416,10 +436,8 @@ class VideoListController extends GetxController {
         effectiveMediaType: effectiveMediaType,
         availablePathItems: res.validPaths,
       );
-      if (
-        didRestoreSelectedPaths &&
-        !_sameSelectedPaths(requestedSelectedPaths, selectedPaths)
-      ) {
+      if (didRestoreSelectedPaths &&
+          !_sameSelectedPaths(requestedSelectedPaths, selectedPaths)) {
         await refreshList(showLoading: false);
         return;
       }
