@@ -8,9 +8,22 @@ Color _statusColor(ThemeData theme, String status) {
 
 String _statusText(String status) {
   if (status == 'running') return 'media_tool_video_trans_status_running'.tr;
+  if (status == 'completed')
+    return 'media_tool_video_trans_status_completed'.tr;
   if (status == 'stopped') return 'media_tool_video_trans_status_stopped'.tr;
   if (status == 'error') return 'media_tool_video_trans_status_error'.tr;
   return status;
+}
+
+String _videoTransProgressText(String progress, String baseProgress) {
+  final runtime = progress.trim();
+  final visible = runtime.startsWith('validating|')
+      ? '${'media_tool_video_trans_validating'.tr} ${runtime.substring('validating|'.length)}'
+            .trim()
+      : runtime;
+  if (visible.isEmpty) return baseProgress.isEmpty ? '-' : baseProgress;
+  if (RegExp(r'^\d+/\d+$').hasMatch(visible)) return visible;
+  return baseProgress.isEmpty ? visible : '$baseProgress · $visible';
 }
 
 String _nonVideoText(String v) {

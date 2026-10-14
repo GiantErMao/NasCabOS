@@ -13,6 +13,18 @@ function buildHttpError(msgKey, statusCode) {
   return err;
 }
 
+function displayVideoTransStatus(row) {
+  if (
+    row.status === tableMediaToolVideoTrans.STATUS_STOPPED &&
+    Number(row.total_files) > 0 &&
+    Number(row.done_files) >= Number(row.total_files) &&
+    row.last_end_time != null
+  ) {
+    return 'completed';
+  }
+  return row.status;
+}
+
 class VideoTransService {
   constructor(knexMain) {
     this.knexMain = knexMain;
@@ -50,7 +62,7 @@ class VideoTransService {
       page: limit === null ? 1 : pageNum,
       pageSize: limit === null ? total : limit,
       total,
-      items: rows || [],
+      items: (rows || []).map(row => ({ ...row, status: displayVideoTransStatus(row) })),
     };
   }
 
@@ -95,9 +107,19 @@ class VideoTransService {
         target_path: target,
         trans_config: cfg,
         non_video_policy: pol,
+        status: tableMediaToolVideoTrans.STATUS_STOPPED,
+        last_error: null,
+        progress: '',
+        total_files: 0,
+        done_files: 0,
+        handled_input_bytes: 0,
+        handled_output_bytes: 0,
+        processed_count: 0,
+        skipped_count: 0,
+        non_video_count: 0,
         update_time: now,
         last_start_time: null,
-        last_end_time: now,
+        last_end_time: null,
       });
       return { id: idNum };
     }
@@ -137,4 +159,4 @@ class VideoTransService {
   }
 }
 
-module.exports = { VideoTransService };
+module.exports = { VideoTransService, displayVideoTransStatus };

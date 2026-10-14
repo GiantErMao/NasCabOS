@@ -436,6 +436,14 @@ export class MediaToolTaskController {
   }
 
   async startTask(id: number): Promise<void> {
+    if (this.kind === 'video_trans' && this.tasks.some(task => task.id === id && task.status === 'completed')) {
+      const confirmed = await DialogUtil.showConfirmDialog(
+        L10n.t('need_confirm', '需要确认'),
+        L10n.t('media_tool_video_trans_restart_confirm', '任务已完成，重新启动会再次处理源文件。确定继续吗？'));
+      if (confirmed !== true) {
+        return;
+      }
+    }
     await this.opStartStop(id, true);
   }
 

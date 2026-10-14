@@ -439,6 +439,7 @@ export struct MediaToolTaskCard {
             startLabel: this.startLabel(),
             stopLabel: this.stopLabel(),
             loading: this.opLoading,
+            muted: this.kind === 'video_trans' && this.status === 'completed',
             onTap: (): void => {
               if (this.canStop) {
                 void this.ctrl.stopTask(this.item.id);

@@ -138,6 +138,20 @@ class VideoTransController extends GetxController {
   }
 
   Future<void> start({required int id}) async {
+    final completed = tasks.any(
+      (task) =>
+          task['id']?.toString() == id.toString() &&
+          task['status']?.toString().toLowerCase() == 'completed',
+    );
+    if (completed) {
+      final confirmed = await DialogUtil.showConfirmDialog(
+        title: 'need_confirm'.tr,
+        content: 'media_tool_video_trans_restart_confirm'.tr,
+        confirmText: 'ok'.tr,
+        cancelText: 'cancel'.tr,
+      );
+      if (confirmed != true) return;
+    }
     opLoadingById[id] = true;
     opLoadingById.refresh();
     final res = await _api.start(id: id);

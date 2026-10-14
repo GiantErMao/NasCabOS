@@ -182,6 +182,9 @@ export function mediaTaskStatusText(kind: MediaToolKind, status: string): string
   if (status === 'stopped') {
     return L10n.t(`media_tool_${kind}_status_stopped`, '已停止');
   }
+  if (kind === 'video_trans' && status === 'completed') {
+    return L10n.t('media_tool_video_trans_status_completed', '已完成');
+  }
   if (status === 'error') {
     return L10n.t(`media_tool_${kind}_status_error`, '异常');
   }
@@ -234,7 +237,10 @@ export function mediaLastErrorDisplay(raw: string, mappedKeys: string[],
 /** 进度文本：runtime 优先，其次 done/total（对齐 Flutter progressText 组合逻辑） */
 export function mediaProgressText(runtimeProgress: string, totalFiles: number,
   doneFiles: number): string {
-  const rt = runtimeProgress.trim();
+  const raw = runtimeProgress.trim();
+  const rt = raw.startsWith('validating|')
+    ? `${L10n.t('media_tool_video_trans_validating', '正在校验')} ${raw.substring('validating|'.length)}`.trim()
+    : raw;
   const base = totalFiles > 0 ? `${doneFiles}/${totalFiles}` : '';
   if (rt.length === 0) {
     return base.length === 0 ? '-' : base;

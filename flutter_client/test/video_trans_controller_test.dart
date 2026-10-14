@@ -7,6 +7,13 @@ import 'package:get/get.dart';
 
 class RecordingVideoApi extends VideoTransApiService {
   final List<Map<String, dynamic>> requests = [];
+  final List<int> startRequests = [];
+
+  @override
+  Future<ApiResponse<Map<String, dynamic>>> start({required int id}) async {
+    startRequests.add(id);
+    return ApiResponse.success({'id': id});
+  }
 
   @override
   Future<ApiResponse<Map<String, dynamic>>> upsert({
@@ -125,6 +132,48 @@ void main() {
       isFalse,
     );
     expect(api.requests, isEmpty);
+    await finish(tester);
+  });
+
+  testWidgets('completed task requires confirmation before restarting', (
+    tester,
+  ) async {
+    await prepare(tester);
+    final api = RecordingVideoApi();
+    final controller = VideoTransController(api: api);
+    controller.tasks.assignAll([
+      {'id': 42, 'status': 'completed'},
+    ]);
+
+    final canceledStart = controller.start(id: 42);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(api.startRequests, isEmpty);
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextButton),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await canceledStart;
+    expect(api.startRequests, isEmpty);
+
+    final confirmedStart = controller.start(id: 42);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextButton),
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    await confirmedStart;
+    expect(api.startRequests, [42]);
     await finish(tester);
   });
 }

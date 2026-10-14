@@ -30,6 +30,7 @@ class _VideoTransTaskCard extends StatelessWidget {
     final opLoading = ctrl.opLoadingById[id] == true;
 
     final canStop = status == 'running';
+    final isCompleted = status == 'completed';
     final canStart = status != 'running';
     final canEdit = status != 'running' && !opLoading;
 
@@ -123,13 +124,7 @@ class _VideoTransTaskCard extends StatelessWidget {
 
     final runtimeProgress = item['progress']?.toString().trim() ?? '';
     final baseProgress = totalFiles > 0 ? '$doneFiles/$totalFiles' : '';
-    final progressText = runtimeProgress.isEmpty
-        ? (baseProgress.isEmpty ? '-' : baseProgress)
-        : RegExp(r'^\d+/\d+$').hasMatch(runtimeProgress)
-        ? runtimeProgress
-        : (baseProgress.isEmpty
-              ? runtimeProgress
-              : '$baseProgress · $runtimeProgress');
+    final progressText = _videoTransProgressText(runtimeProgress, baseProgress);
 
     return CustomGlassCard(
       padding: const EdgeInsets.all(12),
@@ -278,6 +273,12 @@ class _VideoTransTaskCard extends StatelessWidget {
                           }
                         },
                   isDisabled: opLoading,
+                  style: isCompleted
+                      ? ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        )
+                      : null,
                   icon: opLoading
                       ? const SizedBox(
                           width: 16,

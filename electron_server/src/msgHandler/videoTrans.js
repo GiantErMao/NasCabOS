@@ -169,7 +169,9 @@ function handleStopVideoTransTask({ expressWorker, singletonWorkerManager, messa
       if (!status || !status.exists) {
         try {
           const knexMain = dbUtil.getConnectMainDb().knex;
-          await knexMain('media_tool_video_trans').where({ id: idNum }).update({ status: 'stopped', last_error: null, progress: '', update_time: new Date(), last_end_time: new Date() });
+          await knexMain('media_tool_video_trans').where({ id: idNum, status: 'running' }).update({
+            status: 'stopped', last_error: null, progress: '', update_time: new Date(), last_end_time: null,
+          });
         } catch (_) {}
         if (requestId) {
           expressWorker.send({ type: 'stopVideoTransTaskResponse', data: { requestId, stopped: true, id: idNum } });

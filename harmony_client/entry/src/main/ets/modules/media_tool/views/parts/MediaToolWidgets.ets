@@ -13,6 +13,7 @@ export struct MediaToolTextButton {
   @Param label: string = '';
   @Param icon: Resource | undefined = undefined;
   @Param primary: boolean = false;
+  @Param muted: boolean = false;
   @Param disabled: boolean = false;
   @Param loading: boolean = false;
   @Param onTap: () => void = (): void => {
@@ -23,7 +24,7 @@ export struct MediaToolTextButton {
   }
 
   private fg(): string {
-    return this.primary ? '#FFFFFF' : this.palette().primary;
+    return this.muted ? this.palette().subText : this.primary ? '#FFFFFF' : this.palette().primary;
   }
 
   build() {
@@ -68,6 +69,7 @@ export struct MediaToolStartStopButton {
   @Param startLabel: string = L10n.t('file_backup_start', '开始');
   @Param stopLabel: string = L10n.t('file_backup_stop', '停止');
   @Param loading: boolean = false;
+  @Param muted: boolean = false;
   @Param onTap: () => void = (): void => {
   };
 
@@ -75,7 +77,8 @@ export struct MediaToolStartStopButton {
     MediaToolTextButton({
       label: this.running ? this.stopLabel : this.startLabel,
       icon: this.running ? $r('sys.symbol.stop_circle') : $r('sys.symbol.play_circle'),
-      primary: true,
+      primary: !this.muted,
+      muted: this.muted,
       disabled: this.loading,
       loading: this.loading,
       onTap: (): void => {

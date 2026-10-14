@@ -514,6 +514,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
             return;
           }
           try {
+            if (typeof onProgress === 'function') onProgress({ stage: 'validating' });
             await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
             if (stopSignal()) throw new Error('replacement_stopped');
             if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
@@ -618,6 +619,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
             return;
           }
           try {
+            if (typeof onProgress === 'function') onProgress({ stage: 'validating' });
             await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
             if (stopSignal()) throw new Error('replacement_stopped');
             if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
@@ -1129,13 +1131,18 @@ class VideoTransWorker {
         },
         onProgress: p => {
           const label = ensureString(relPath).trim() || path.basename(inputPath);
+          if (p?.stage === 'validating') {
+            latestProgress = `validating|${label}`;
+            void writeOnce().catch(() => null);
+            return;
+          }
           const percent = p && p.percent !== undefined && p.percent !== null ? Number(p.percent) : null;
           const sec = p && p.sec !== undefined && p.sec !== null ? Number(p.sec) : null;
           const dur = p && p.durationSec !== undefined && p.durationSec !== null ? Number(p.durationSec) : null;
           const seg = sec !== null && Number.isFinite(sec) ? formatSeconds(sec) : '';
           const tot = dur !== null && Number.isFinite(dur) ? formatSeconds(dur) : '';
           const timePart = seg && tot ? `${seg}/${tot}` : seg ? seg : '';
-          const percentPart = percent !== null && Number.isFinite(percent) ? `${percent.toFixed(1)}%` : '';
+          const percentPart = percent !== null && Number.isFinite(percent) ? `${Math.min(percent, 99.9).toFixed(1)}%` : '';
           const parts = [label, timePart, percentPart].filter(v => ensureString(v).trim().length > 0);
           latestProgress = parts.join(' ');
         },
