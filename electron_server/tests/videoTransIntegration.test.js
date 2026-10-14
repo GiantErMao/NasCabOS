@@ -100,6 +100,24 @@ test('validation rejects empty/damaged and wrong-duration outputs', async t => {
   await assert.rejects(validateOutput({ tmp, metadata: {}, spec: { muxer: 'mp4', probeFormat: 'mov' }, cfg: {}, expectedDuration: 1, stopSignal: () => false }));
 });
 
+test('validation decodes only a short video sample after checking duration', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-validation-sample-'));
+  t.after(() => fs.rm(dir, { force: true, recursive: true }));
+  const output = path.join(dir, 'output.mp4');
+  execFileSync(process.env.TEST_FFMPEG || 'ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=25:duration=6', '-c:v', 'libx264', output]);
+  let args;
+  await validateOutput({
+    tmp: output,
+    expectedDuration: 6,
+    spec: core.outputSpec(output, { out_format: 'source' }),
+    stopSignal: () => false,
+    onCommand: cmd => { args = cmd._getArguments(); },
+  });
+  assert.ok(args);
+  assert.deepEqual(Array.from(args.slice(args.indexOf('-t'), args.indexOf('-t') + 2)), ['-t', '3']);
+  assert.deepEqual(Array.from(args.slice(args.indexOf('-map'), args.indexOf('-map') + 2)), ['-map', '0:v:0']);
+});
+
 test('source container mappings and existing GIF/WebP conversion remain usable', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-containers-'));
   t.after(() => fs.rm(dir, { force: true, recursive: true }));
