@@ -443,3 +443,21 @@ adb -s e6fc7cb7 logcat -d |
 ## 14. 替换源文件保存热修复（2052）
 
 2026-10-14 修复 Flutter 控制器的旧保存目录必填检查。4 项控制器回归测试通过，Web 已热切换，APK `1.2.7 (2052)` 已覆盖安装到 ADB 设备 `e6fc7cb7`。新镜像和归档已完成，详情见 [2052 热修复记录](VIDEO_CONVERSION_TRIM_HOTFIX_2052.md)。
+
+## 15. 硬件转码链路优化（2026-10-14）
+
+视频转换 Worker 已加入禁用隐式自动缩放、硬件分辨率滤镜和三级回退。22 项 Node 测试中 21 通过、1 项本机 WebP 编码器缺失跳过；远端全硬件、问题片段及人为失败后的混合编码验证通过。仅热更新服务端两个文件，不重启容器，新任务加载优化。APK 仍为 2052，无需重建。
+
+镜像 `nascabos-custom:video-trim-hw-20261014` 已无暂停提交并归档校验，详见 [硬件优化记录](VIDEO_CONVERSION_HARDWARE_OPTIMIZATION_20261014.md)。
+
+## 16. 可变分辨率保护（2026-10-14）
+
+后续将无条件关闭硬件 autoscale 改为固定画布＋GPU 帧条件关闭。CPU 帧编码仍保留默认 autoscale；新增可变分辨率/宽高比和竖屏旋转测试。26 项本地测试中 25 通过、1 项 WebP 编码器缺失跳过。远端逐帧尺寸检查通过，已无重启热更新、无暂停提交并归档 `nascabos-custom:video-trim-fixed-20261014`，APK 仍为 2052。
+
+详见 [固定画布修复记录](VIDEO_CONVERSION_FIXED_GEOMETRY_20261014.md)。
+
+## 17. 保留软件帧后端的硬件解码（2026-10-14）
+
+VideoToolbox / D3D11VA 新增硬件解码、软件缩放、硬件编码路径。用户授权后，远端 Worker/helper 已备份并热更新，10 项路径测试及真实 VAAPI 回归验证通过，内外健康检查正常。容器未重启，新 Worker 加载更新；APK 仍为 2052。
+
+新镜像标签 `nascabos-custom:video-decode-20261014`，旧版本保留，详情见 [硬件解码保留记录](VIDEO_CONVERSION_SOFTWARE_FRAME_HW_DECODE_20261014.md)。

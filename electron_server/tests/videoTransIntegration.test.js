@@ -22,7 +22,7 @@ const sandbox = {
   require(id) {
     if (id.endsWith('/ffmpegPath')) return { path: process.env.TEST_FFMPEG || 'ffmpeg' };
     if (id.endsWith('/ffprobePath')) return { path: process.env.TEST_FFPROBE || 'ffprobe' };
-    if (id.endsWith('/logger')) return { info() {}, error() {} };
+    if (id.endsWith('/logger')) return { info() {}, warn() {}, error() {} };
     if (id.endsWith('/config')) return { getRootPath: () => os.tmpdir() };
     if (id.endsWith('/tableMediaToolVideoTrans')) return { STATUS_STOPPED: 'stopped', STATUS_ERROR: 'error', NON_VIDEO_COPY: 'copy', NON_VIDEO_SKIP: 'skip' };
     if (id.endsWith('/pathUtil')) return workerRequire(id);
@@ -200,4 +200,65 @@ test('stopping FFmpeg during replacement leaves source bytes untouched', async t
   }
   assert.deepEqual(await fs.readFile(source), original);
   assert.ok(!(await fs.readdir(dir)).some(name => name.endsWith('.backup') || name.endsWith('.cab.tmp')));
+});
+
+test('midstream resolution/aspect changes are normalized to the first frame dimensions', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-variable-size-'));
+  t.after(() => fs.rm(dir, { force: true, recursive: true }));
+  const segments = [];
+  for (const [index, size] of ['320x180', '640x480'].entries()) {
+    const file = path.join(dir, `part${index}.ts`);
+    execFileSync(process.env.TEST_FFMPEG || 'ffmpeg', [
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      `testsrc2=size=${size}:rate=25:duration=2`,
+      '-c:v',
+      'libx264',
+      '-output_ts_offset',
+      String(index * 2),
+      '-f',
+      'mpegts',
+      file,
+    ]);
+    segments.push(await fs.readFile(file));
+  }
+  const source = path.join(dir, 'variable.ts');
+  await fs.writeFile(source, Buffer.concat(segments));
+  const inputFrames = JSON.parse(
+    execFileSync(process.env.TEST_FFPROBE || 'ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=width,height', '-of', 'json', source], { encoding: 'utf8' })
+  ).frames;
+  assert.deepEqual([...new Set(inputFrames.map(frame => `${frame.width}x${frame.height}`))], ['320x180', '640x480']);
+  for (const [resolution, width, height] of [
+    ['source', 320, 180],
+    ['240p', 426, 240],
+  ]) {
+    const output = path.join(dir, `${resolution}.mp4`);
+    const result = await transcodeOne({ inputPath: source, outputPath: output, cfg: core.normalizeVideoConfig({ out_format: 'mp4', resolution, enable_hw_accel: false }), stopSignal: () => false });
+    assert.equal(result.ok, true);
+    const frames = JSON.parse(
+      execFileSync(process.env.TEST_FFPROBE || 'ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=width,height', '-of', 'json', output], { encoding: 'utf8' })
+    ).frames;
+    assert.ok(frames.length >= 90);
+    assert.ok(frames.every(frame => frame.width === width && frame.height === height));
+  }
+});
+
+test('fixed geometry respects camera rotation metadata', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-rotation-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const raw = path.join(dir, 'raw.mp4'),
+    source = path.join(dir, 'rotated.mp4'),
+    output = path.join(dir, 'output.mp4');
+  execFileSync(process.env.TEST_FFMPEG || 'ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=25:duration=1', '-c:v', 'libx264', raw]);
+  const help = execFileSync(process.env.TEST_FFMPEG || 'ffmpeg', ['-hide_banner', '-h', 'full'], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+  const rotationArgs = help.includes('-display_rotation') ? ['-display_rotation', '90', '-i', raw, '-c', 'copy'] : ['-i', raw, '-c', 'copy', '-metadata:s:v:0', 'rotate=90'];
+  execFileSync(process.env.TEST_FFMPEG || 'ffmpeg', ['-v', 'error', ...rotationArgs, source]);
+  assert.ok(probe(source).streams.some(stream => stream.side_data_list?.some(item => Math.abs(item.rotation) === 90)));
+  await transcodeOne({ inputPath: source, outputPath: output, cfg: core.normalizeVideoConfig({ out_format: 'mp4', enable_hw_accel: false }), stopSignal: () => false });
+  const stream = probe(output).streams.find(s => s.codec_type === 'video');
+  assert.equal(stream.width, 90);
+  assert.equal(stream.height, 160);
 });

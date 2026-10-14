@@ -229,3 +229,28 @@ Latest remote image archive for this fix:
 - Deployed the new Web build and verified the public file hash. APK 1.2.7 (2052) installed on `e6fc7cb7` with existing data retained; launch is waiting at the system permission dialog.
 - Current release image: `nascabos-custom:video-trim-v2052-20261014`.
 - Hotfix record: `docs/VIDEO_CONVERSION_TRIM_HOTFIX_2052.md`.
+
+## Hardware Pipeline Optimization (2026-10-14)
+
+- Hardware video conversion disables implicit FFmpeg autoscaling and uses explicit GPU scaling for resizing.
+- Fallback is full hardware → CPU decode/hardware encode → CPU; detailed failure reasons are logged.
+- Remote H.264/H.265, resizing, the previously failing source sample, forced hybrid fallback and generated-source replacement passed.
+- Worker/helper hot updated without restarting the container; new tasks load the optimization. APK remains 2052.
+- Current image tag: `nascabos-custom:video-trim-hw-20261014`.
+- Details: `docs/VIDEO_CONVERSION_HARDWARE_OPTIMIZATION_20261014.md`.
+
+## Fixed Geometry / Conditional Autoscale (2026-10-14)
+
+- Replaced unconditional hardware `-noautoscale` with a guard requiring explicit fixed geometry and GPU-frame output. Software-frame encoding keeps default autoscale protection.
+- Original resolution is normalized to initial decoded frame dimensions; target resizing computes both fixed dimensions once. Rotation metadata is handled before normalizing/uploading.
+- Remote variable-resolution/aspect inputs passed full-hardware and hybrid encoding with every output frame at the fixed size. The previously failing source sample still passes.
+- Latest image: `nascabos-custom:video-trim-fixed-20261014`; APK remains 2052.
+- Details: `docs/VIDEO_CONVERSION_FIXED_GEOMETRY_20261014.md`.
+
+## VideoToolbox / D3D11VA Decode Preservation (2026-10-14)
+
+- Added a hardware decode → software frame scaling → hardware encoding path for VideoToolbox and D3D11VA profiles without explicit GPU output formats, retaining autoscale protection.
+- Fallback retries CPU decode with hardware encoding before full CPU conversion; GPU-frame profiles keep the existing supported-filter checks.
+- Related tests: 28 passed, 1 WebP skip. Local VideoToolbox hardware decoding and H.264/HEVC encoding passed; Windows hardware verification remains outstanding.
+- Subsequently deployed to the remote container without restart: 10 hardware unit tests and VAAPI production regression scenarios passed; public health check succeeds. Release image `nascabos-custom:video-decode-20261014`, APK remains 2052.
+- Details: `docs/VIDEO_CONVERSION_SOFTWARE_FRAME_HW_DECODE_20261014.md`.

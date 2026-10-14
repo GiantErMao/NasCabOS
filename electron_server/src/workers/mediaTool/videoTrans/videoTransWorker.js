@@ -1,5 +1,7 @@
+const { resolveOutputGeometry, selectTranscodeModes, buildHardwarePipeline, runTranscodeAttempts } = require('../../../api/modules/mediaTool/videoTransHardware');
 const { normalizeVideoConfig, isTrimming, trimRange, outputSpec, internalFile, acquireSource, recoverSourceTransactions } = require('../../../api/modules/mediaTool/videoTransCore');
 const path = require('path');
+const { execFile } = require('node:child_process');
 const fs = require('fs-extra');
 const ffmpeg = require('fluent-ffmpeg');
 const Logger = require('../../../utils/logger');
@@ -58,37 +60,6 @@ async function ensureHwAccelDbInit() {
   try {
     await knexUtil.init(dbUtil.DB_PATHS.MAIN_DB);
   } catch (_) {}
-}
-
-function buildFfmpegOptionPairs(args) {
-  if (!Array.isArray(args) || args.length === 0) return [];
-  const result = [];
-  for (let i = 0; i < args.length; i++) {
-    const key = args[i];
-    const value = args[i + 1];
-    if (typeof key === 'string' && key.startsWith('-')) {
-      if (typeof value === 'string' && !value.startsWith('-')) {
-        result.push(`${key} ${value}`);
-        i++;
-      } else {
-        result.push(key);
-      }
-    } else if (typeof key === 'string') {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-function extractHwaccelArg(args) {
-  if (!Array.isArray(args)) return '';
-  for (let i = 0; i < args.length - 1; i++) {
-    if (args[i] === '-hwaccel' && typeof args[i + 1] === 'string') {
-      const v = String(args[i + 1]).trim();
-      if (v) return v;
-    }
-  }
-  return '';
 }
 
 async function getHwAccelConfig() {
@@ -419,6 +390,25 @@ async function validateOutput({ tmp, metadata, expectedDuration, spec, cfg, stop
   }
 }
 
+async function probeInitialVideoFrame(file, fallback) {
+  return await new Promise(resolve => {
+    execFile(
+      ffprobePath.path,
+      ['-v', 'error', '-select_streams', 'v:0', '-read_intervals', '%+1', '-show_frames', '-show_entries', 'frame=width,height,sample_aspect_ratio', '-of', 'json', file],
+      { timeout: 15000, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (!error) {
+          try {
+            const frame = JSON.parse(stdout).frames?.find(item => item.width > 0 && item.height > 0);
+            if (frame) return resolve(frame);
+          } catch (_) {}
+        }
+        resolve(fallback);
+      }
+    );
+  });
+}
+
 async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand, onProgress, sourceGuard }) {
   if (stopSignal()) return { ok: false, stopped: true };
   const outDir = path.dirname(outputPath);
@@ -427,7 +417,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
   const hwConfig = cfg.enable_hw_accel === false ? null : await getHwAccelConfig();
   const hwProfile = pickHwAccelProfile({ vcodec: cfg.vcodec, hwConfig });
   const scaleFilter = buildScaleFilter(cfg.resolution);
-  const hasCpuFilters = !!scaleFilter;
+  const scaleHeight = pickScaleHeight(cfg.resolution);
 
   const vb = cfg.video_bitrate_mbps !== undefined && cfg.video_bitrate_mbps !== null ? Number(cfg.video_bitrate_mbps) : null;
   const ab = cfg.audio_bitrate_kbps !== undefined && cfg.audio_bitrate_kbps !== null ? Number(cfg.audio_bitrate_kbps) : null;
@@ -554,43 +544,20 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
     });
   }
 
-  const attemptOnce = async ({ forceCpu }) => {
+  const sourceVideo = metadata.streams?.find(stream => stream.codec_type === 'video');
+  const initialFrame = await probeInitialVideoFrame(inputPath, sourceVideo);
+  const geometry = resolveOutputGeometry({ ...sourceVideo, ...initialFrame, side_data_list: sourceVideo?.side_data_list }, scaleHeight);
+
+  const attemptOnce = async mode => {
     const tmp = buildTmpOutputPath(outputPath);
-    const useHw = !forceCpu && shouldTryHw;
+    const useHw = mode !== 'cpu';
     const videoCodec = useHw ? selectVideoCodec({ vcodec: cfg.vcodec, hwConfig }).videoCodec : buildCpuVideoCodec(cfg.vcodec);
     const audioCodec = buildAudioCodec(cfg.acodec);
 
-    const inputOptions = ['-probesize 100M', '-analyzeduration 100M'];
-    if (useHw && hwProfile) {
-      if (Array.isArray(hwProfile.initDeviceArgs) && hwProfile.initDeviceArgs.length > 0) {
-        inputOptions.push(...buildFfmpegOptionPairs(hwProfile.initDeviceArgs));
-      }
+    const pipeline = buildHardwarePipeline({ profile: hwProfile, mode, geometry, softwareScale: scaleFilter });
+    const inputOptions = ['-probesize 100M', '-analyzeduration 100M', ...pipeline.inputOptions];
 
-      const decodeArgs = Array.isArray(hwProfile.decodeArgs) ? hwProfile.decodeArgs : null;
-      if (!hasCpuFilters && decodeArgs && decodeArgs.length > 0) {
-        inputOptions.push(...buildFfmpegOptionPairs(decodeArgs));
-        if (
-          decodeArgs.includes('-hwaccel') &&
-          decodeArgs.includes('cuda') &&
-          decodeArgs.includes('-hwaccel_output_format') &&
-          decodeArgs.includes('cuda') &&
-          !inputOptions.some(v => String(v).includes('-extra_hw_frames'))
-        ) {
-          inputOptions.push('-extra_hw_frames 8');
-        }
-      } else if (hasCpuFilters && decodeArgs && decodeArgs.length > 0) {
-        const hwaccelName = extractHwaccelArg(decodeArgs);
-        if (hwaccelName && !inputOptions.some(v => String(v).includes('-hwaccel'))) {
-          inputOptions.push(`-hwaccel ${hwaccelName}`);
-        }
-      }
-
-      if (Array.isArray(hwProfile.inputArgs) && hwProfile.inputArgs.length > 0) {
-        inputOptions.push(...buildFfmpegOptionPairs(hwProfile.inputArgs));
-      }
-    }
-
-    const outputOptions = [];
+    const outputOptions = [...pipeline.outputOptions];
     outputOptions.push(`-f ${outputFormat}`);
     if (isTrimming(cfg)) {
       outputOptions.push(`-ss ${range.start}`, `-t ${range.duration}`, '-avoid_negative_ts make_zero');
@@ -633,6 +600,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
             sec: sec !== null && Number.isFinite(sec) ? sec : null,
             percent,
             useHw,
+            mode,
           });
         })
         .on('error', err => {
@@ -663,11 +631,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
         })
         .output(tmp);
 
-      const filters = [];
-      if (scaleFilter) filters.push(scaleFilter);
-      const hardwareFrames = useHw && !hasCpuFilters && Array.isArray(hwProfile?.decodeArgs) && hwProfile.decodeArgs.includes('-hwaccel_output_format');
-      if (useHw && !hardwareFrames && hwProfile?.hwUploadFilter) filters.push(hwProfile.hwUploadFilter);
-      if (filters.length) cmd.videoFilters(filters.join(','));
+      if (pipeline.filters.length) cmd.videoFilters(pipeline.filters.join(','));
 
       try {
         cmd.run();
@@ -677,22 +641,15 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
     });
   };
 
-  if (!shouldTryHw) return await attemptOnce({ forceCpu: true });
-
-  try {
-    return await attemptOnce({ forceCpu: false });
-  } catch (hwErr) {
-    if (stopSignal() || hwErr.noFallback) throw hwErr;
-    try {
-      return await attemptOnce({ forceCpu: true });
-    } catch (cpuErr) {
-      const hwMsg = hwErr && hwErr.message ? String(hwErr.message) : String(hwErr);
-      const cpuMsg = cpuErr && cpuErr.message ? String(cpuErr.message) : String(cpuErr);
-      const merged = `HW failed: ${hwMsg}\nCPU failed: ${cpuMsg}`;
-      const e = new Error(merged);
-      throw e;
-    }
-  }
+  const modes = selectTranscodeModes(hwProfile, geometry, shouldTryHw);
+  return await runTranscodeAttempts({
+    modes,
+    attempt: attemptOnce,
+    stopped: stopSignal,
+    onFallback: ({ mode, next, error }) => {
+      Logger.warn(`videoTrans fallback ${mode} -> ${next}: ${safeTruncate(error.message || String(error), 1200)}`);
+    },
+  });
 }
 
 class VideoTransWorker {
