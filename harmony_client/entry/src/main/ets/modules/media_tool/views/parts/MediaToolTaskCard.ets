@@ -138,7 +138,7 @@ export struct MediaToolTaskCard {
       return `#${id} · ${fallback} · ${L10n.t('media_tool_quality', '质量')} ${quality}`;
     }
     if (this.kind === 'video_trans') {
-      const fmt = mediaFormatText(this.configText('out_format', 'mp4'));
+      const fmt = this.configText('out_format', 'mp4') === 'source' ? L10n.t('media_tool_video_trans_format_source', '与源文件一致') : mediaFormatText(this.configText('out_format', 'mp4'));
       const resolution = this.resolutionShort(this.configText('resolution', 'source'));
       if (this.isAnimated) {
         return `#${id} · ${fmt} · ${resolution}`;
@@ -311,10 +311,18 @@ export struct MediaToolTaskCard {
           })
           MediaToolPathRow({
             label: L10n.t('media_tool_video_trans_target', '目标路径'),
-            path: this.item.targetPath,
+            path: this.item.config['replace_source'] === true ? this.item.sourcePath : this.item.targetPath,
             onView: (): void => {
-              this.openPath(this.item.targetPath);
+              this.openPath(this.item.config['replace_source'] === true ? this.item.sourcePath : this.item.targetPath);
             }
+          })
+          MediaToolKeyValueRow({
+            label: L10n.t('media_tool_video_trans_replace_source', '完成后替换源文件'),
+            value: this.item.config['replace_source'] === true ? L10n.t('media_tool_video_trans_enabled', '开启') : L10n.t('media_tool_video_trans_disabled', '关闭')
+          })
+          MediaToolKeyValueRow({
+            label: L10n.t('media_tool_video_trans_trim_range', '裁剪区间'),
+            value: `${this.configText('trim_start_seconds', '0')}–${this.configText('trim_end_seconds', '0')} s`
           })
           if (!this.isAnimated) {
             MediaToolKeyValueRow({

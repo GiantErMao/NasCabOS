@@ -1,3 +1,4 @@
+const { normalizeVideoConfig, isTrimming, trimRange, outputSpec, internalFile, acquireSource, recoverSourceTransactions } = require('../../../api/modules/mediaTool/videoTransCore');
 const path = require('path');
 const fs = require('fs-extra');
 const ffmpeg = require('fluent-ffmpeg');
@@ -16,6 +17,10 @@ const { normalizeAvailableHwAccelList, pickEffectiveHwAccelConfig } = require('.
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
+function replacementStateDir() {
+  return path.join(process.env.PATH_DATABASE || path.join(config.getRootPath(), 'database'), 'video-trans-replacements');
+}
+
 function ensureString(v) {
   if (v === undefined || v === null) return '';
   return String(v);
@@ -25,18 +30,6 @@ function safeTruncate(s, maxLen) {
   const t = ensureString(s);
   if (t.length <= maxLen) return t;
   return t.slice(0, Math.max(0, maxLen - 3)) + '...';
-}
-
-function normalizeConfig(raw) {
-  if (raw === undefined || raw === null) return {};
-  if (typeof raw === 'object') return raw || {};
-  if (typeof raw === 'string') {
-    try {
-      const decoded = JSON.parse(raw);
-      if (decoded && typeof decoded === 'object') return decoded;
-    } catch (_) {}
-  }
-  return {};
 }
 
 function isVideoExt(filePath) {
@@ -165,6 +158,7 @@ async function countFilesRecursive({ root, shouldSkipDir, isStopRequested }) {
       continue;
     }
     for (const name of entries) {
+      if (internalFile(name)) continue;
       if (isStopRequested()) return total;
       const full = path.join(dir, name);
       let stat;
@@ -196,6 +190,7 @@ async function walkFilesRecursive({ root, shouldSkipDir, isStopRequested, onFile
       continue;
     }
     for (const name of entries) {
+      if (internalFile(name)) continue;
       if (isStopRequested()) return;
       const full = path.join(dir, name);
       let stat;
@@ -317,7 +312,7 @@ async function cleanupCabTmpFiles(rootDir) {
         stack.push(full);
         continue;
       }
-      if (ent.isFile() && ent.name.endsWith('.cab.tmp')) {
+      if (ent.isFile() && ent.name.endsWith('.cab.tmp') && ent.name.includes(`.${process.pid}.`)) {
         const ok = await fs
           .remove(full)
           .then(() => true)
@@ -368,11 +363,68 @@ async function getMediaDurationSec(filePath) {
   });
 }
 
-async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand, onProgress }) {
+function probeMedia(file) {
+  return new Promise((resolve, reject) => ffmpeg.ffprobe(file, (err, data) => (err ? reject(err) : resolve(data))));
+}
+async function validateOutput({ tmp, metadata, expectedDuration, spec, cfg, stopSignal, onCommand }) {
+  const output = await probeMedia(tmp);
+  const video = output.streams?.find(s => s.codec_type === 'video');
+  if (!(await fs.stat(tmp)).size || !video) throw new Error('output_video_invalid');
+  if (
+    !String(output.format?.format_name || '')
+      .split(',')
+      .includes(spec.probeFormat)
+  )
+    throw new Error('output_container_mismatch');
+  if (!['gif', 'webp'].includes(spec.muxer)) {
+    const duration = Number(output.format?.duration || video.duration);
+    const frameRate = String(video.avg_frame_rate || '0/1')
+      .split('/')
+      .map(Number);
+    const fps = frameRate[0] / frameRate[1];
+    const tolerance = Math.max(0.25, Number.isFinite(fps) && fps > 0 ? 3 / fps : 0.25);
+    if (!Number.isFinite(duration) || duration <= 0 || (Number.isFinite(expectedDuration) && Math.abs(duration - expectedDuration) > tolerance)) throw new Error('output_duration_mismatch');
+    const sourceAudio = metadata.streams?.find(s => s.codec_type === 'audio');
+    const outputAudio = output.streams?.find(s => s.codec_type === 'audio');
+    if (sourceAudio && !outputAudio) throw new Error('output_audio_missing');
+    if (sourceAudio && outputAudio && cfg.replace_source) {
+      const audioDuration = Number(outputAudio.duration);
+      const sourceAudioDuration = Number(sourceAudio.duration);
+      if (
+        Number.isFinite(audioDuration) &&
+        Number.isFinite(sourceAudioDuration) &&
+        sourceAudioDuration >= (cfg.trim_end_seconds || Number(metadata.format?.duration)) - tolerance &&
+        Math.abs(audioDuration - expectedDuration) > tolerance
+      )
+        throw new Error('output_audio_duration_mismatch');
+      const videoStart = Number(video.start_time || 0);
+      const audioStart = Number(outputAudio.start_time || 0);
+      if (Math.abs(videoStart - audioStart) > tolerance) throw new Error('output_audio_sync_mismatch');
+    }
+  }
+  if (cfg.replace_source) {
+    if (stopSignal()) throw new Error('replacement_stopped');
+    await new Promise((resolve, reject) => {
+      const cmd = ffmpeg(tmp)
+        .outputOptions(['-v error', '-xerror', '-f null'])
+        .output('-')
+        .on('start', () => {
+          if (typeof onCommand === 'function') onCommand(cmd);
+          if (stopSignal()) cmd.kill('SIGKILL');
+        })
+        .on('error', reject)
+        .on('end', resolve);
+      cmd.run();
+    });
+  }
+}
+
+async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand, onProgress, sourceGuard }) {
+  if (stopSignal()) return { ok: false, stopped: true };
   const outDir = path.dirname(outputPath);
   await fs.ensureDir(outDir);
 
-  const hwConfig = await getHwAccelConfig();
+  const hwConfig = cfg.enable_hw_accel === false ? null : await getHwAccelConfig();
   const hwProfile = pickHwAccelProfile({ vcodec: cfg.vcodec, hwConfig });
   const scaleFilter = buildScaleFilter(cfg.resolution);
   const hasCpuFilters = !!scaleFilter;
@@ -389,7 +441,9 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
   const isGif = outExt === '.gif';
   const isWebp = outExt === '.webp';
   const isAnimated = isGif || isWebp;
-  const outputFormat = isGif ? 'gif' : isWebp ? 'webp' : outExt === '.mov' ? 'mov' : outExt === '.avi' ? 'avi' : 'mp4';
+  const metadata = await probeMedia(inputPath);
+  const spec = outputSpec(inputPath, cfg, metadata);
+  const outputFormat = spec.muxer;
   const fastStart = outExt === '.mp4';
 
   const firstPick = selectVideoCodec({ vcodec: cfg.vcodec, hwConfig });
@@ -397,7 +451,9 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
   const shouldTryHw = enableHwAccel && !!firstPick.useHwAccel;
 
   const durationSec = await getMediaDurationSec(inputPath);
-  const effectiveDurationSec = isAnimated && durationSec && Number.isFinite(durationSec) && durationSec > 60 ? 60 : durationSec;
+  const range = trimRange(cfg, durationSec);
+  if (range.skip) return { ok: false, skipped: range.skip };
+  const effectiveDurationSec = isAnimated && durationSec && Number.isFinite(durationSec) && durationSec > 60 ? 60 : range.duration;
   const shouldClip = isAnimated && durationSec && Number.isFinite(durationSec) && durationSec > 60;
 
   if (isAnimated) {
@@ -412,7 +468,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
     if (shouldClip) outputOptions.push('-t 60');
     if (threads && Number.isFinite(threads) && threads > 0) outputOptions.push(`-threads ${threads}`);
     outputOptions.push('-an');
-    outputOptions.push('-vsync 0');
+    outputOptions.push('-fps_mode passthrough');
     outputOptions.push('-loop 0');
 
     if (isWebp) {
@@ -429,6 +485,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
         .on('start', cmdLine => {
           console.log('start', cmdLine);
           if (typeof onCommand === 'function') onCommand(cmd);
+          if (stopSignal()) cmd.kill('SIGKILL');
         })
         .on('progress', p => {
           if (typeof onProgress !== 'function') return;
@@ -467,9 +524,14 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
             return;
           }
           try {
-            await fs.move(tmp, outputPath, { overwrite: true });
+            await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
+            if (stopSignal()) throw new Error('replacement_stopped');
+            if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
+            else await fs.move(tmp, outputPath, { overwrite: false });
             resolve({ ok: true });
           } catch (e) {
+            await fs.remove(tmp).catch(() => {});
+            e.noFallback = true;
             reject(e);
           }
         })
@@ -530,6 +592,9 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
 
     const outputOptions = [];
     outputOptions.push(`-f ${outputFormat}`);
+    if (isTrimming(cfg)) {
+      outputOptions.push(`-ss ${range.start}`, `-t ${range.duration}`, '-avoid_negative_ts make_zero');
+    }
     if (fastStart) outputOptions.push('-movflags +faststart');
     if (preset && (videoCodec === 'libx264' || videoCodec === 'libx265')) outputOptions.push(`-preset ${preset}`);
     if (vb && Number.isFinite(vb) && vb > 0) outputOptions.push(`-b:v ${vb}M`);
@@ -546,14 +611,15 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
         .on('start', cmdLine => {
           console.log('start', cmdLine);
           if (typeof onCommand === 'function') onCommand(cmd);
+          if (stopSignal()) cmd.kill('SIGKILL');
         })
         .on('progress', p => {
           if (typeof onProgress !== 'function') return;
           const timemark = p && p.timemark ? String(p.timemark) : '';
           const sec = parseTimemarkToSeconds(timemark);
           let percent = p && p.percent !== undefined && p.percent !== null ? Number(p.percent) : null;
-          if ((!percent || !Number.isFinite(percent)) && durationSec && sec !== null && Number.isFinite(sec)) {
-            percent = (sec / durationSec) * 100;
+          if (effectiveDurationSec && sec !== null && Number.isFinite(sec)) {
+            percent = (sec / effectiveDurationSec) * 100;
           }
           if (percent !== null && Number.isFinite(percent)) {
             if (percent < 0) percent = 0;
@@ -563,7 +629,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
           }
           onProgress({
             timemark,
-            durationSec,
+            durationSec: effectiveDurationSec,
             sec: sec !== null && Number.isFinite(sec) ? sec : null,
             percent,
             useHw,
@@ -584,15 +650,24 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
             return;
           }
           try {
-            await fs.move(tmp, outputPath, { overwrite: true });
+            await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
+            if (stopSignal()) throw new Error('replacement_stopped');
+            if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
+            else await fs.move(tmp, outputPath, { overwrite: false });
             resolve({ ok: true });
           } catch (e) {
+            await fs.remove(tmp).catch(() => {});
+            e.noFallback = true;
             reject(e);
           }
         })
         .output(tmp);
 
-      if (scaleFilter) cmd.videoFilters(scaleFilter);
+      const filters = [];
+      if (scaleFilter) filters.push(scaleFilter);
+      const hardwareFrames = useHw && !hasCpuFilters && Array.isArray(hwProfile?.decodeArgs) && hwProfile.decodeArgs.includes('-hwaccel_output_format');
+      if (useHw && !hardwareFrames && hwProfile?.hwUploadFilter) filters.push(hwProfile.hwUploadFilter);
+      if (filters.length) cmd.videoFilters(filters.join(','));
 
       try {
         cmd.run();
@@ -607,7 +682,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
   try {
     return await attemptOnce({ forceCpu: false });
   } catch (hwErr) {
-    if (stopSignal()) throw hwErr;
+    if (stopSignal() || hwErr.noFallback) throw hwErr;
     try {
       return await attemptOnce({ forceCpu: true });
     } catch (cpuErr) {
@@ -695,27 +770,34 @@ class VideoTransWorker {
 
     const sourcePath = ensureString(row.source_path).trim();
     const targetPath = ensureString(row.target_path).trim();
-    const cfg = normalizeConfig(row.trans_config);
+    let cfg;
+    try {
+      cfg = normalizeVideoConfig(row.trans_config);
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+    cfg._replacement_run = !row.last_end_time && row.last_start_time ? new Date(row.last_start_time).toISOString() : new Date().toISOString();
     const policy = ensureString(row.non_video_policy).trim().toLowerCase();
 
-    if (!sourcePath || !targetPath) return { ok: false, error: 'invalid_params' };
+    if (!sourcePath || (!cfg.replace_source && !targetPath)) return { ok: false, error: 'invalid_params' };
     if (![tableMediaToolVideoTrans.NON_VIDEO_SKIP, tableMediaToolVideoTrans.NON_VIDEO_COPY].includes(policy)) {
       return { ok: false, error: 'invalid_params' };
     }
 
     const sourceResolved = path.resolve(sourcePath);
-    const targetResolved = path.resolve(targetPath);
+    const targetResolved = cfg.replace_source ? sourceResolved : path.resolve(targetPath);
     const conflict = PathUtil.isMutualConflictPath(sourceResolved, targetResolved);
-    if (conflict) return { ok: false, error: 'invalid_path_relation' };
+    if (!cfg.replace_source && conflict) return { ok: false, error: 'invalid_path_relation' };
 
     let sourceStat;
     try {
+      if (cfg.replace_source) await recoverSourceTransactions(sourceResolved, replacementStateDir());
       sourceStat = await fs.stat(sourceResolved);
-    } catch (_) {
-      return { ok: false, error: 'source_not_found' };
+    } catch (e) {
+      return { ok: false, error: e.code === 'ENOENT' ? 'source_not_found' : e.message };
     }
 
-    const tgtOk = await ensureTargetDirWritable(targetResolved);
+    const tgtOk = await ensureTargetDirWritable(cfg.replace_source ? (sourceStat.isFile() ? path.dirname(sourceResolved) : sourceResolved) : targetResolved);
     if (tgtOk) return { ok: false, error: tgtOk };
 
     if (sourceStat.isFile()) {
@@ -732,7 +814,7 @@ class VideoTransWorker {
 
     if (!sourceStat.isDirectory()) return { ok: false, error: 'source_not_found' };
 
-    const targetRootResolved = path.join(targetResolved, path.basename(sourceResolved));
+    const targetRootResolved = cfg.replace_source ? sourceResolved : path.join(targetResolved, path.basename(sourceResolved));
     const tgtRootOk = await ensureTargetDirWritable(targetRootResolved);
     if (tgtRootOk) return { ok: false, error: tgtRootOk };
 
@@ -757,7 +839,7 @@ class VideoTransWorker {
     const prepared = await this._prepareTaskId(taskId);
     if (!prepared.ok) {
       const err = ensureString(prepared.error || 'invalid_params').trim();
-      if (['source_not_found', 'target_not_found', 'target_not_dir', 'target_no_access', 'invalid_path_relation'].includes(err)) {
+      {
         await this._updateTask({
           status: tableMediaToolVideoTrans.STATUS_ERROR,
           last_error: safeTruncate(err, 800),
@@ -771,6 +853,8 @@ class VideoTransWorker {
     }
 
     this.stopRequested = false;
+    this._skipMessages = [];
+    this._failed = false;
     this.running = true;
     this._cleanupRoot = prepared.sourceType === 'dir' ? prepared.targetRootResolved : prepared.targetResolved;
 
@@ -785,19 +869,19 @@ class VideoTransWorker {
       processed_count: 0,
       skipped_count: 0,
       non_video_count: 0,
-      last_start_time: new Date(),
+      last_start_time: new Date(prepared.cfg._replacement_run),
       last_end_time: null,
     });
 
     this._reply('videoTransStartResponse', { requestId, ok: true, pid: process.pid });
 
     this.runningPromise = this._run(prepared)
-      .catch(async () => {
+      .catch(async e => {
         await this._updateTask({
-          status: tableMediaToolVideoTrans.STATUS_STOPPED,
-          last_error: null,
+          status: tableMediaToolVideoTrans.STATUS_ERROR,
+          last_error: safeTruncate(e.message || String(e), 800),
           progress: '',
-          last_end_time: new Date(),
+          last_end_time: null,
         });
       })
       .finally(async () => {
@@ -835,9 +919,9 @@ class VideoTransWorker {
 
     if (prepared.sourceType === 'file') {
       const cfg = prepared.cfg || {};
-      const outExt = buildOutputExt(cfg.out_format);
+      const outExt = cfg.out_format === 'source' ? path.extname(prepared.sourceResolved) : buildOutputExt(cfg.out_format);
       const base = path.basename(prepared.sourceResolved, path.extname(prepared.sourceResolved));
-      const outputPath = path.join(prepared.targetResolved, `${base}${outExt}`);
+      const outputPath = cfg.replace_source ? prepared.sourceResolved : path.join(prepared.targetResolved, `${base}${outExt}`);
 
       await this._updateTask({ total_files: 1 });
 
@@ -845,7 +929,7 @@ class VideoTransWorker {
       const isVid = isVideoExt(prepared.sourceResolved);
       if (!isVid) {
         let outputBytes = 0;
-        if (prepared.nonVideoPolicy === tableMediaToolVideoTrans.NON_VIDEO_COPY) {
+        if (!cfg.replace_source && prepared.nonVideoPolicy === tableMediaToolVideoTrans.NON_VIDEO_COPY) {
           const copyDst = path.join(prepared.targetResolved, path.basename(prepared.sourceResolved));
           const existed = await fs.pathExists(copyDst).catch(() => false);
           if (!existed) {
@@ -869,7 +953,7 @@ class VideoTransWorker {
         return;
       }
       const outputExists = await fs.pathExists(outputPath).catch(() => false);
-      if (outputExists) {
+      if (!cfg.replace_source && outputExists) {
         const outputBytes = await getFileSize(outputPath);
         await this._updateTask({
           done_files: 1,
@@ -900,9 +984,10 @@ class VideoTransWorker {
           done_files: 1,
           handled_input_bytes: inputBytes,
           handled_output_bytes: outputBytes,
-          processed_count: 1,
+          processed_count: ok === 'skipped' ? 0 : 1,
+          skipped_count: ok === 'skipped' ? 1 : 0,
           status: tableMediaToolVideoTrans.STATUS_STOPPED,
-          last_error: null,
+          last_error: this._skipMessages?.length ? this._skipMessages.join('\n') : null,
           progress: '',
           last_end_time: new Date(),
         });
@@ -910,16 +995,16 @@ class VideoTransWorker {
 
       if (isStopRequested()) {
         await this._updateTask({
-          status: tableMediaToolVideoTrans.STATUS_STOPPED,
+          status: this._failed ? tableMediaToolVideoTrans.STATUS_ERROR : tableMediaToolVideoTrans.STATUS_STOPPED,
           progress: '',
-          last_end_time: new Date(),
+          last_end_time: null,
         });
       }
 
       return;
     }
 
-    const shouldSkipDir = p => PathUtil.isAncestorPath(PathUtil.normalizeFsPathForCompare(prepared.targetResolved), PathUtil.normalizeFsPathForCompare(p));
+    const shouldSkipDir = p => !prepared.cfg.replace_source && PathUtil.isAncestorPath(PathUtil.normalizeFsPathForCompare(prepared.targetResolved), PathUtil.normalizeFsPathForCompare(p));
     const totalFiles = await countFilesRecursive({ root: prepared.sourceResolved, shouldSkipDir, isStopRequested });
     await this._updateTask({ total_files: totalFiles });
 
@@ -959,8 +1044,8 @@ class VideoTransWorker {
         const rel = path.relative(prepared.sourceResolved, full);
         const relDir = path.dirname(rel);
         const baseName = path.basename(full, path.extname(full));
-        const outRel = path.join(relDir === '.' ? '' : relDir, `${baseName}${outExt}`);
-        const outputPath = path.join(prepared.targetRootResolved, outRel);
+        const outRel = path.join(relDir === '.' ? '' : relDir, `${baseName}${cfg.out_format === 'source' ? path.extname(full) : outExt}`);
+        const outputPath = cfg.replace_source ? full : path.join(prepared.targetRootResolved, outRel);
 
         const inputBytes = await getFileSize(full);
 
@@ -968,7 +1053,7 @@ class VideoTransWorker {
         if (!isVid) {
           nonVideoCount += 1;
           const copyDst = path.join(prepared.targetRootResolved, rel);
-          if (prepared.nonVideoPolicy === tableMediaToolVideoTrans.NON_VIDEO_COPY) {
+          if (!cfg.replace_source && prepared.nonVideoPolicy === tableMediaToolVideoTrans.NON_VIDEO_COPY) {
             const existed = await fs.pathExists(copyDst).catch(() => false);
             if (!existed) {
               await fs.ensureDir(path.dirname(copyDst));
@@ -983,7 +1068,7 @@ class VideoTransWorker {
         }
 
         const existedOut = await fs.pathExists(outputPath).catch(() => false);
-        if (existedOut) {
+        if (!cfg.replace_source && existedOut) {
           const outputBytes = await getFileSize(outputPath);
           skippedCount += 1;
           doneFiles += 1;
@@ -1002,6 +1087,13 @@ class VideoTransWorker {
           relPath: rel,
         });
         if (!ok) return;
+        if (ok === 'skipped') {
+          skippedCount++;
+          doneFiles++;
+          handledInputBytes += inputBytes;
+          await flush(false);
+          return;
+        }
 
         const outputBytes = await getFileSize(outputPath);
         processedCount += 1;
@@ -1015,16 +1107,16 @@ class VideoTransWorker {
 
     if (isStopRequested()) {
       await this._updateTask({
-        status: tableMediaToolVideoTrans.STATUS_STOPPED,
+        status: this._failed ? tableMediaToolVideoTrans.STATUS_ERROR : tableMediaToolVideoTrans.STATUS_STOPPED,
         progress: '',
-        last_end_time: new Date(),
+        last_end_time: null,
       });
       return;
     }
 
     await this._updateTask({
       status: tableMediaToolVideoTrans.STATUS_STOPPED,
-      last_error: null,
+      last_error: this._skipMessages?.length ? safeTruncate(this._skipMessages.join('\n'), 800) : null,
       progress: '',
       last_end_time: new Date(),
     });
@@ -1033,6 +1125,7 @@ class VideoTransWorker {
   async _handleOneFile({ inputPath, outputPath, cfg, isStopRequested, relPath }) {
     if (isStopRequested()) return false;
 
+    let sourceGuard = null;
     let cmdRef = null;
     let timer = null;
     let latestProgress = '';
@@ -1059,12 +1152,18 @@ class VideoTransWorker {
     }
 
     try {
+      if (cfg.replace_source) {
+        sourceGuard = await acquireSource(inputPath, `${this.taskId}-${cfg._replacement_run}`, replacementStateDir());
+        if (sourceGuard.alreadyCommitted) return 'skipped';
+      }
       const res = await transcodeOne({
+        sourceGuard,
         inputPath,
         outputPath,
         cfg,
         stopSignal: isStopRequested,
         onCommand: cmd => {
+          if (cmdRef) this._runningCommands.delete(cmdRef);
           this._currentCommand = cmd;
           cmdRef = cmd;
           try {
@@ -1098,6 +1197,11 @@ class VideoTransWorker {
         timer = null;
       }
       await this._updateTask({ progress: '' }).catch(() => null);
+      if (res?.skipped) {
+        this._skipMessages = [...(this._skipMessages || []), `${relPath}: ${res.skipped}`];
+        await this._updateTask({ last_error: safeTruncate(this._skipMessages.join('\n'), 800) });
+        return 'skipped';
+      }
       if (!res || !res.ok) return false;
       return true;
     } catch (e) {
@@ -1113,15 +1217,20 @@ class VideoTransWorker {
         } catch (_) {}
         timer = null;
       }
+      if (isStopRequested()) return false;
+      this._failed = true;
       const msg = e && e.message ? String(e.message) : String(e);
       await this._updateTask({
         status: tableMediaToolVideoTrans.STATUS_ERROR,
         last_error: safeTruncate(msg, 800),
         progress: '',
-        last_end_time: new Date(),
+        last_end_time: null,
       });
       this.stopRequested = true;
       return false;
+    } finally {
+      if (timer) clearInterval(timer);
+      if (sourceGuard) await sourceGuard.release();
     }
   }
 
@@ -1162,4 +1271,5 @@ class VideoTransWorker {
   }
 }
 
-new VideoTransWorker();
+if (require.main === module) new VideoTransWorker();
+module.exports = { transcodeOne, validateOutput, VideoTransWorker };

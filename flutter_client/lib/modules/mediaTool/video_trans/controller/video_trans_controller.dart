@@ -5,7 +5,10 @@ import '../../../../utils/toast_util.dart';
 import '../service/video_trans_api_service.dart';
 
 class VideoTransController extends GetxController {
-  final _api = VideoTransApiService();
+  final VideoTransApiService _api;
+
+  VideoTransController({VideoTransApiService? api})
+    : _api = api ?? VideoTransApiService();
 
   final RxList<Map<String, dynamic>> tasks = <Map<String, dynamic>>[].obs;
   final RxBool isLoading = false.obs;
@@ -86,8 +89,9 @@ class VideoTransController extends GetxController {
     required String nonVideoPolicy,
   }) async {
     final s = sourcePath.trim();
-    final t = targetPath.trim();
-    if (s.isEmpty || t.isEmpty) {
+    final replaceSource = transConfig['replace_source'] == true;
+    final t = replaceSource ? '' : targetPath.trim();
+    if (s.isEmpty || (!replaceSource && t.isEmpty)) {
       ToastUtil.show('media_tool_video_trans_required'.tr);
       return false;
     }

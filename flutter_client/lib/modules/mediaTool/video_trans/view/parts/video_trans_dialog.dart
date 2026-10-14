@@ -18,6 +18,7 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
   late final TextEditingController _threadCountCtrl;
 
   static const List<String> _supportedVideoExts = [
+    '.webm',
     '.mov',
     '.mp4',
     '.avi',
@@ -38,7 +39,14 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     '.flv',
   ];
 
-  String _format = 'mp4';
+  String _format = 'source';
+  String _previousFormat = 'source';
+  bool _replaceSource = false;
+  late final TextEditingController _trimStartCtrl;
+  late final TextEditingController _trimEndCtrl;
+  bool get _isTrimming =>
+      (num.tryParse(_trimStartCtrl.text) ?? 0) != 0 ||
+      (num.tryParse(_trimEndCtrl.text) ?? 0) != 0;
   String _vcodec = 'h264';
   String _acodec = 'aac';
   String _resolution = 'source';
@@ -92,12 +100,13 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     final cfg = _parseConfig(widget.initial?['trans_config']);
 
     _format = _normalizeIn(cfg['out_format']?.toString(), [
+      'source',
       'mp4',
       'mov',
       'avi',
       'gif',
       'webp',
-    ], fallback: 'mp4');
+    ], fallback: _isEdit ? 'mp4' : 'source');
     _vcodec = _normalizeIn(cfg['vcodec']?.toString(), [
       'h264',
       'h265',
@@ -130,6 +139,15 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     _audioBitrateMode = ab != null && ab > 0 ? 'custom' : 'auto';
     _fpsMode = fps != null && fps > 0 ? 'custom' : 'auto';
 
+    _replaceSource = cfg['replace_source'] == true;
+    if (_replaceSource) _format = 'source';
+    _previousFormat = _format;
+    _trimStartCtrl = TextEditingController(
+      text: (cfg['trim_start_seconds'] ?? 0).toString(),
+    );
+    _trimEndCtrl = TextEditingController(
+      text: (cfg['trim_end_seconds'] ?? 0).toString(),
+    );
     _sourceCtrl = TextEditingController(text: initSource);
     _targetCtrl = TextEditingController(text: initTarget);
     _videoBitrateCtrl = TextEditingController(
@@ -146,6 +164,8 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
 
   @override
   void dispose() {
+    _trimStartCtrl.dispose();
+    _trimEndCtrl.dispose();
     _sourceCtrl.dispose();
     _targetCtrl.dispose();
     _videoBitrateCtrl.dispose();
@@ -230,7 +250,10 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     _threadCountCtrl.text = threadCount.toString();
 
     final m = <String, dynamic>{
-      'out_format': _format,
+      'out_format': _replaceSource ? 'source' : _format,
+      'replace_source': _replaceSource,
+      'trim_start_seconds': num.tryParse(_trimStartCtrl.text.trim()) ?? 0,
+      'trim_end_seconds': num.tryParse(_trimEndCtrl.text.trim()) ?? 0,
       'vcodec': _vcodec,
       'acodec': _acodec,
       'resolution': _resolution,
@@ -243,12 +266,43 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     return m;
   }
 
+  void _trimChanged() {
+    final animated = _isAnimated && _isTrimming;
+    setState(() {
+      if (animated) _format = 'source';
+      _ensureResolutionValid();
+    });
+    if (animated) {
+      DialogUtil.showErrorDialog(
+        message: 'media_tool_video_trans_trim_animated'.tr,
+      );
+    }
+  }
+
   Future<void> _submit() async {
     if (_saving) return;
     final id = int.tryParse(widget.initial?['id']?.toString() ?? '');
     final source = _sourceCtrl.text.trim();
-    final target = _targetCtrl.text.trim();
-    if (source.isEmpty || target.isEmpty) {
+    final target = _replaceSource ? '' : _targetCtrl.text.trim();
+    final start = num.tryParse(
+      _trimStartCtrl.text.trim().isEmpty ? '0' : _trimStartCtrl.text.trim(),
+    );
+    final end = num.tryParse(
+      _trimEndCtrl.text.trim().isEmpty ? '0' : _trimEndCtrl.text.trim(),
+    );
+    if (start == null ||
+        end == null ||
+        !start.isFinite ||
+        !end.isFinite ||
+        start < 0 ||
+        end < 0 ||
+        (end != 0 && end <= start)) {
+      DialogUtil.showErrorDialog(
+        message: 'media_tool_video_trans_trim_invalid'.tr,
+      );
+      return;
+    }
+    if (source.isEmpty || (!_replaceSource && target.isEmpty)) {
       DialogUtil.showErrorDialog(message: 'media_tool_video_trans_required'.tr);
       return;
     }
@@ -316,41 +370,109 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
                   labelText: 'media_tool_video_trans_source'.tr,
                   hintText: 'media_tool_video_trans_pick_source'.tr,
                   enabled: !disabled,
-                  readOnly: true,
-                  onTap: disabled ? null : _pickSource,
-                  suffixIcon: const Icon(Icons.video_file_outlined),
+                  suffixIcon: IconButton(
+                    onPressed: disabled ? null : _pickSource,
+                    icon: const Icon(Icons.video_file_outlined),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CustomTextField(
-                  controller: _targetCtrl,
-                  labelText: 'media_tool_video_trans_target'.tr,
-                  hintText: 'media_tool_video_trans_pick_target'.tr,
-                  enabled: !disabled,
-                  readOnly: true,
-                  onTap: disabled ? null : _pickTarget,
-                  suffixIcon: const Icon(Icons.folder_outlined),
+                SwitchListTile(
+                  title: Text('media_tool_video_trans_replace_source'.tr),
+                  subtitle: Text('media_tool_video_trans_replace_hint'.tr),
+                  value: _replaceSource,
+                  onChanged: disabled
+                      ? null
+                      : (value) => setState(() {
+                          _replaceSource = value;
+                          if (value) {
+                            _previousFormat = _format;
+                            _format = 'source';
+                          } else {
+                            _format =
+                                _isTrimming &&
+                                    ['gif', 'webp'].contains(_previousFormat)
+                                ? 'source'
+                                : _previousFormat;
+                          }
+                          _ensureResolutionValid();
+                        }),
                 ),
+                if (!_replaceSource) ...[
+                  CustomTextField(
+                    controller: _targetCtrl,
+                    labelText: 'media_tool_video_trans_target'.tr,
+                    hintText: 'media_tool_video_trans_pick_target'.tr,
+                    enabled: !disabled,
+                    readOnly: true,
+                    onTap: disabled ? null : _pickTarget,
+                    suffixIcon: const Icon(Icons.folder_outlined),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: CustomTextField(
+                        controller: _trimStartCtrl,
+                        labelText: 'media_tool_video_trans_trim_start'.tr,
+                        enabled: !disabled,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => _trimChanged(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CustomTextField(
+                        controller: _trimEndCtrl,
+                        labelText: 'media_tool_video_trans_trim_end'.tr,
+                        enabled: !disabled,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => _trimChanged(),
+                      ),
+                    ),
+                  ],
+                ),
+                Text('media_tool_video_trans_trim_hint'.tr),
                 const SizedBox(height: 12),
                 CustomDropdownField<String>(
                   value: _format,
                   labelText: 'media_tool_video_trans_out_format'.tr,
-                  enabled: !disabled,
+                  enabled: !disabled && !_replaceSource,
                   items: [
+                    DropdownMenuItem(
+                      value: 'source',
+                      child: Text('media_tool_video_trans_format_source'.tr),
+                    ),
                     const DropdownMenuItem(value: 'mp4', child: Text('MP4')),
                     const DropdownMenuItem(value: 'mov', child: Text('MOV')),
                     const DropdownMenuItem(value: 'avi', child: Text('AVI')),
-                    DropdownMenuItem(
-                      value: 'webp',
-                      child: Text('media_tool_video_trans_out_format_webp'.tr),
-                    ),
-                    DropdownMenuItem(
-                      value: 'gif',
-                      child: Text('media_tool_video_trans_out_format_gif'.tr),
-                    ),
+                    if (!_isTrimming)
+                      DropdownMenuItem(
+                        value: 'webp',
+                        child: Text(
+                          'media_tool_video_trans_out_format_webp'.tr,
+                        ),
+                      ),
+                    if (!_isTrimming)
+                      DropdownMenuItem(
+                        value: 'gif',
+                        child: Text('media_tool_video_trans_out_format_gif'.tr),
+                      ),
                   ],
                   onChanged: (v) {
                     final next = (v?.toString() ?? '').toLowerCase();
-                    if (!['mp4', 'mov', 'avi', 'gif', 'webp'].contains(next)) {
+                    if (![
+                      'source',
+                      'mp4',
+                      'mov',
+                      'avi',
+                      'gif',
+                      'webp',
+                    ].contains(next)) {
                       return;
                     }
                     setState(() {

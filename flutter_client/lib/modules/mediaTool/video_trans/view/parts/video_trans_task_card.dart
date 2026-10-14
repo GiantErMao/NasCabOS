@@ -163,7 +163,21 @@ class _VideoTransTaskCard extends StatelessWidget {
             const SizedBox(height: 6),
             pathRow(
               label: 'media_tool_video_trans_target'.tr,
-              value: targetPath,
+              value: config['replace_source'] == true ? sourcePath : targetPath,
+            ),
+            const SizedBox(height: 6),
+            _KeyValueRow(
+              label: 'media_tool_video_trans_replace_source'.tr,
+              value: config['replace_source'] == true
+                  ? 'media_tool_video_trans_enabled'.tr
+                  : 'media_tool_video_trans_disabled'.tr,
+              selectable: false,
+            ),
+            const SizedBox(height: 6),
+            _KeyValueRow(
+              label: 'media_tool_video_trans_trim_range'.tr,
+              value: '${config['trim_start_seconds'] ?? 0}–${config['trim_end_seconds'] ?? 0} s',
+              selectable: false,
             ),
             const SizedBox(height: 6),
             if (!isAnimated) ...[

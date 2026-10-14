@@ -143,5 +143,17 @@
   "media_tool_video_trans_video_bitrate_mbps": "Videobitrate (Mbps)",
   "media_tool_video_trans_video_codec": "Videocodec",
   "media_tool_with_meta": "Metadaten behalten",
-  "media_tool_without_meta": "Metadaten entfernen"
+  "media_tool_without_meta": "Metadaten entfernen",
+  "media_tool_video_trans_format_source": "Same as source",
+  "media_tool_video_trans_replace_source": "Replace source after completion",
+  "media_tool_video_trans_replace_hint": "Replace only after validation. Restarting a completed task trims the current source again.",
+  "media_tool_video_trans_trim_start": "Start time (seconds)",
+  "media_tool_video_trans_trim_end": "End time (seconds)",
+  "media_tool_video_trans_trim_hint": "0–0 disables trimming; end 0 means EOF. Out-of-range videos are skipped.",
+  "media_tool_video_trans_trim_invalid": "Enter finite non-negative seconds; a non-zero end must exceed the start.",
+  "media_tool_video_trans_trim_animated": "Trimming does not support WebP/GIF. Switched to same as source.",
+  "media_tool_video_trans_trim_range": "Trim range",
+  "media_tool_video_trans_enabled": "On",
+  "media_tool_video_trans_disabled": "Off",
+  "media_tool_video_trans_path_hint": "Paste an absolute server path"
 }

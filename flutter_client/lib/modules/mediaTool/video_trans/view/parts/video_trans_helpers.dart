@@ -39,6 +39,7 @@ String _lastErrorDisplayText(String raw) {
 
 String _formatText(String fmt) {
   final f = fmt.trim().toLowerCase();
+  if (f == 'source') return 'media_tool_video_trans_format_source'.tr;
   if (f.isEmpty) return '-';
   return f.toUpperCase();
 }

@@ -1,6 +1,6 @@
 # NasCabOS Current Development Progress
 
-Last updated: 2026-10-10
+Last updated: 2026-10-14
 
 This document summarizes the current implementation and deployment state for continuing work in a new conversation.
 
@@ -77,9 +77,9 @@ Notes:
 ## Android APK
 
 - Last built and signed APK:
-  - `flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2042-signed.apk`
+  - `flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2052.apk`
 - Version:
-  - `1.2.7 (2042)`
+  - `1.2.7 (2052)`
 - Installed test device:
   - `e6fc7cb7`
 - Flutter SDK path:
@@ -211,3 +211,21 @@ Latest remote image archive for this fix:
   - HDR sources
 - Subtitle burn-in and HDR tone mapping currently require CPU-side filters and may fall back to soft decode plus VAAPI hardware encode.
 - If `libredeepl` does not expose a LibreTranslate-compatible `/translate` API, add a DeepL/DeepLX-compatible translation adapter.
+
+## Video Conversion Trim Release (2026-10-14)
+
+- Released the video conversion trim UI and server logic to `nascabos` and the public Web endpoint.
+- Supports editable/pasted server source paths, default source container, seconds-based trim ranges, conditional output directory, and validated source replacement.
+- Remote VAAPI tests passed for H.264/H.265 with original resolution and 240p; CPU scaling now uploads frames before hardware encoding.
+- Real database task persistence, Worker execution, source replacement, counters, GIF and WebP conversion passed on temporary media; all test task records were removed.
+- APK 1.2.7 (2051) built and signed with the same internal test certificate as v2050. Installed with ADB on device `e6fc7cb7`, preserving app data; verified version 2051 and launch returned OK with the system permission dialog.
+- Release image: `nascabos-custom:video-trim-v2051-20261014`; restart retains the current container changes. Use this tag when rebuilding the container.
+- Detailed release record: `docs/VIDEO_CONVERSION_TRIM_RELEASE_20261014.md`.
+
+## Replacement Save Validation Hotfix (2052)
+
+- Fixed the remaining unconditional output-directory check in Flutter `VideoTransController.upsert`; replacement saves now reach the API with an empty output directory.
+- Four real-controller regression cases pass, and targeted Dart analysis is clean.
+- Deployed the new Web build and verified the public file hash. APK 1.2.7 (2052) installed on `e6fc7cb7` with existing data retained; launch is waiting at the system permission dialog.
+- Current release image: `nascabos-custom:video-trim-v2052-20261014`.
+- Hotfix record: `docs/VIDEO_CONVERSION_TRIM_HOTFIX_2052.md`.

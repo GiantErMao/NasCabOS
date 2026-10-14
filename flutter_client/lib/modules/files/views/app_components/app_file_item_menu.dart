@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/api/api_controller.dart';
@@ -55,6 +56,18 @@ Future<void> showAppFileItemMenuBottomSheet(
                       ),
                     ),
                     const Divider(height: 1),
+                    if (path.isNotEmpty)
+                      ListTile(
+                        leading: const Icon(Icons.link_outlined),
+                        title: Text('copy_path'.tr),
+                        onTap: () async {
+                          actionTaken = true;
+                          await Clipboard.setData(ClipboardData(text: path));
+                          Get.back();
+                          ToastUtil.show('quick_share_copied'.tr);
+                          ctrl.clearSelect();
+                        },
+                      ),
                     ListTile(
                       leading: Icon(
                         Icons.remove_circle_outline_outlined,
@@ -113,6 +126,18 @@ Future<void> showAppFileItemMenuBottomSheet(
                     ),
                   ),
                   const Divider(height: 1),
+                  if (path.isNotEmpty)
+                    ListTile(
+                      leading: const Icon(Icons.link_outlined),
+                      title: Text('copy_path'.tr),
+                      onTap: () async {
+                        actionTaken = true;
+                        await Clipboard.setData(ClipboardData(text: path));
+                        Get.back();
+                        ToastUtil.show('quick_share_copied'.tr);
+                        ctrl.clearSelect();
+                      },
+                    ),
                   ListTile(
                     leading: const Icon(
                       Icons.drive_file_rename_outline_outlined,

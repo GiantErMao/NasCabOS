@@ -2304,5 +2304,17 @@
   "zoom_in": "放大",
   "zoom_level": "缩放级别",
   "zoom_mode": "缩放模式",
-  "zoom_out": "缩小"
+  "zoom_out": "缩小",
+  "media_tool_video_trans_format_source": "与源文件一致",
+  "media_tool_video_trans_replace_source": "完成后替换源文件",
+  "media_tool_video_trans_replace_hint": "输出校验通过后替换。重新启动已完成的任务会再次裁剪当前源文件。",
+  "media_tool_video_trans_trim_start": "起始时间（秒）",
+  "media_tool_video_trans_trim_end": "结束时间（秒）",
+  "media_tool_video_trans_trim_hint": "0–0 不裁剪；结束为 0 表示到最后。超出视频时长会跳过该文件。",
+  "media_tool_video_trans_trim_invalid": "请输入有效的非负秒数；结束时间非 0 时必须大于起始时间。",
+  "media_tool_video_trans_trim_animated": "裁剪不支持 WebP/GIF，已改为与源文件一致。",
+  "media_tool_video_trans_trim_range": "裁剪区间",
+  "media_tool_video_trans_enabled": "开启",
+  "media_tool_video_trans_disabled": "关闭",
+  "media_tool_video_trans_path_hint": "粘贴服务器绝对路径"
 }

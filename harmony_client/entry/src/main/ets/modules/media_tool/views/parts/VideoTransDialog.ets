@@ -10,7 +10,7 @@ import { MediaToolDialogShell, MediaToolGap, MediaToolNumberField,
 
 /** 支持的视频扩展名（对齐 Flutter _supportedVideoExts） */
 const SUPPORTED_VIDEO_EXTS: string[] = [
-  '.mov', '.mp4', '.avi', '.rm', '.mkv', '.f4v', '.vob', '.mpg', '.rmvb',
+  '.webm', '.mov', '.mp4', '.avi', '.rm', '.mkv', '.f4v', '.vob', '.mpg', '.rmvb',
   '.asf', '.mts', '.ts', '.wmv', '.m4v', '.m2ts', '.ogg', '.3gp', '.flv'
 ];
 
@@ -38,7 +38,22 @@ export struct VideoTransDialog {
 
   @Local sourceText: string = '';
   @Local targetText: string = '';
-  @Local format: string = 'mp4';
+  @Local format: string = 'source';
+  @Local replaceSource: boolean = false;
+  @Local trimStartText: string = '0';
+  @Local trimEndText: string = '0';
+  private previousFormat: string = 'source';
+
+  private get isTrimming(): boolean {
+    return Number(this.trimStartText) !== 0 || Number(this.trimEndText) !== 0;
+  }
+  private trimChanged(): void {
+    if (this.isTrimming && this.isAnimated) {
+      this.format = 'source';
+      DialogUtil.showErrorDialog(L10n.t('media_tool_video_trans_trim_animated', '裁剪不支持 WebP/GIF，已改为与源文件一致。'));
+    }
+    this.ensureResolutionValid();
+  }
   @Local vcodec: string = 'h264';
   @Local acodec: string = 'aac';
   @Local resolution: string = 'source';
@@ -86,7 +101,12 @@ export struct VideoTransDialog {
       ? `${init.raw['non_video_policy']}` : 'skip').trim().toLowerCase();
     this.nonVideoPolicy = pol === 'copy' ? 'copy' : 'skip';
     const cfg = init.config;
-    this.format = normalizeIn(cfgText(cfg, 'out_format'), ['mp4', 'mov', 'avi', 'gif', 'webp'], 'mp4');
+    this.replaceSource = cfg['replace_source'] === true;
+    this.trimStartText = cfgText(cfg, 'trim_start_seconds') || '0';
+    this.trimEndText = cfgText(cfg, 'trim_end_seconds') || '0';
+    this.format = normalizeIn(cfgText(cfg, 'out_format'), ['source', 'mp4', 'mov', 'avi', 'gif', 'webp'], 'mp4');
+    if (this.replaceSource) this.format = 'source';
+    this.previousFormat = this.format;
     this.vcodec = normalizeIn(cfgText(cfg, 'vcodec'), ['h264', 'h265'], 'h264');
     this.acodec = normalizeIn(cfgText(cfg, 'acodec'), ['aac', 'mp3'], 'aac');
     this.resolution = normalizeIn(cfgText(cfg, 'resolution'),
@@ -151,8 +171,12 @@ export struct VideoTransDialog {
     const threadRaw = mtAsNum(this.threadCountText);
     const threadCount = Math.min(50, Math.max(1, threadRaw === undefined ? 5 : Math.round(threadRaw)));
     this.threadCountText = `${threadCount}`;
-    return buildVideoTransConfig(this.format, this.vcodec, this.acodec, this.resolution,
+    const cfg = buildVideoTransConfig(this.replaceSource ? 'source' : this.format, this.vcodec, this.acodec, this.resolution,
       vb, ab, fps, threadCount, this.enableHwAccel);
+    cfg['replace_source'] = this.replaceSource;
+    cfg['trim_start_seconds'] = Number(this.trimStartText);
+    cfg['trim_end_seconds'] = Number(this.trimEndText);
+    return cfg;
   }
 
   private async submit(): Promise<boolean> {
@@ -161,8 +185,14 @@ export struct VideoTransDialog {
     }
     const id = this.initial !== undefined && this.initial.id > 0 ? this.initial.id : undefined;
     const source = this.sourceText.trim();
-    const target = this.targetText.trim();
-    if (source.length === 0 || target.length === 0) {
+    const target = this.replaceSource ? '' : this.targetText.trim();
+    const start = Number(this.trimStartText);
+    const end = Number(this.trimEndText);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0 || (end !== 0 && end <= start)) {
+      DialogUtil.showErrorDialog(L10n.t('media_tool_video_trans_trim_invalid', '请输入有效的非负秒数；结束时间非 0 时必须大于起始时间。'));
+      return false;
+    }
+    if (source.length === 0 || (!this.replaceSource && target.length === 0)) {
       DialogUtil.showErrorDialog(L10n.t('media_tool_video_trans_required', '请选择源路径与目标路径'));
       return false;
     }
@@ -191,13 +221,15 @@ export struct VideoTransDialog {
   }
 
   private formatOptions(): PickOption[] {
-    return [
+    const options: PickOption[] = [
+      new PickOption('source', L10n.t('media_tool_video_trans_format_source', '与源文件一致')),
       new PickOption('mp4', 'MP4'),
       new PickOption('mov', 'MOV'),
       new PickOption('avi', 'AVI'),
       new PickOption('webp', L10n.t('media_tool_video_trans_out_format_webp', 'WebP 动图')),
       new PickOption('gif', L10n.t('media_tool_video_trans_out_format_gif', 'GIF 动图'))
     ];
+    return this.isTrimming ? options.filter((option: PickOption): boolean => option.key !== 'gif' && option.key !== 'webp') : options;
   }
 
   private vcodecOptions(): PickOption[] {
@@ -253,16 +285,37 @@ export struct VideoTransDialog {
       }
     }) {
       Column({ space: 12 }) {
-        MediaToolPickField({
-          label: L10n.t('media_tool_video_trans_source', '源路径'),
-          value: this.sourceText,
-          hint: L10n.t('media_tool_video_trans_pick_source', '点击选择视频文件或目录'),
-          icon: $r('sys.symbol.video'),
-          disabled: this.disabled,
-          onTap: (): void => {
-            this.pickSource();
+        Text(L10n.t('media_tool_video_trans_source', '源路径'))
+        TextInput({ text: this.sourceText, placeholder: L10n.t('media_tool_video_trans_path_hint', '粘贴服务器绝对路径') })
+          .enabled(!this.disabled)
+          .onChange((text: string): void => { this.sourceText = text; })
+        Button(L10n.t('media_tool_video_trans_pick_source', '点击选择视频文件或目录'))
+          .enabled(!this.disabled).onClick((): void => { this.pickSource(); })
+        MediaToolSwitchRow({
+          label: L10n.t('media_tool_video_trans_replace_source', '完成后替换源文件'),
+          value: this.replaceSource, disabled: this.disabled,
+          onChanged: (value: boolean): void => {
+            this.replaceSource = value;
+            if (value) { this.previousFormat = this.format; this.format = 'source'; }
+            else { this.format = this.isTrimming && ['gif', 'webp'].indexOf(this.previousFormat) >= 0 ? 'source' : this.previousFormat; }
+            this.ensureResolutionValid();
           }
         })
+        Text(L10n.t('media_tool_video_trans_replace_hint', '输出校验通过后替换；重新启动已完成任务会再次裁剪。'))
+        Row({ space: 12 }) {
+          Column() {
+            Text(L10n.t('media_tool_video_trans_trim_start', '起始时间（秒）'))
+            TextInput({ text: this.trimStartText }).type(InputType.Normal).enabled(!this.disabled)
+              .onChange((text: string): void => { this.trimStartText = text; this.trimChanged(); })
+          }.layoutWeight(1)
+          Column() {
+            Text(L10n.t('media_tool_video_trans_trim_end', '结束时间（秒）'))
+            TextInput({ text: this.trimEndText }).type(InputType.Normal).enabled(!this.disabled)
+              .onChange((text: string): void => { this.trimEndText = text; this.trimChanged(); })
+          }.layoutWeight(1)
+        }
+        Text(L10n.t('media_tool_video_trans_trim_hint', '0–0 不裁剪；结束为 0 表示到最后，超界会跳过。'))
+        if (!this.replaceSource) {
         MediaToolPickField({
           label: L10n.t('media_tool_video_trans_target', '目标路径'),
           value: this.targetText,
@@ -272,14 +325,15 @@ export struct VideoTransDialog {
             this.pickTarget();
           }
         })
+        }
         MediaToolSelectField({
           label: L10n.t('media_tool_video_trans_out_format', '输出格式'),
           options: this.formatOptions(),
           value: this.format,
-          disabled: this.disabled,
+          disabled: this.disabled || this.replaceSource,
           onChanged: (key: string): void => {
             const next = key.toLowerCase();
-            if (['mp4', 'mov', 'avi', 'gif', 'webp'].indexOf(next) < 0) {
+            if (['source', 'mp4', 'mov', 'avi', 'gif', 'webp'].indexOf(next) < 0) {
               return;
             }
             this.format = next;

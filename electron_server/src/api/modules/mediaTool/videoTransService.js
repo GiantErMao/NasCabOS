@@ -1,3 +1,4 @@
+const { normalizeVideoConfig, normalizeSourcePath } = require('./videoTransCore');
 const PathUtil = require('../../../utils/pathUtil');
 const tableMediaToolVideoTrans = require('../../../db/table/tableMediaToolVideoTrans');
 
@@ -10,19 +11,6 @@ function buildHttpError(msgKey, statusCode) {
   const err = new Error(String(msgKey || 'common.ERROR'));
   err.statusCode = Number(statusCode || 500) || 500;
   return err;
-}
-
-function normalizeTransConfig(raw) {
-  if (raw === undefined || raw === null) return '';
-  if (typeof raw === 'string') return raw.trim();
-  if (typeof raw === 'object') {
-    try {
-      return JSON.stringify(raw);
-    } catch (_) {
-      return '';
-    }
-  }
-  return '';
 }
 
 class VideoTransService {
@@ -70,16 +58,22 @@ class VideoTransService {
     const idNum = id === undefined || id === null ? null : Number(id);
     const hasId = Number.isFinite(idNum) && idNum > 0;
 
-    const source = normalizeString(sourcePath);
-    const target = normalizeString(targetPath);
-    const cfg = normalizeTransConfig(transConfig);
+    const source = normalizeSourcePath(sourcePath);
+    let parsed;
+    try {
+      parsed = normalizeVideoConfig(transConfig);
+    } catch (e) {
+      throw buildHttpError(e.message, 400);
+    }
+    const target = parsed.replace_source ? '' : normalizeString(targetPath);
+    const cfg = JSON.stringify(parsed);
     const pol = normalizeString(nonVideoPolicy).toLowerCase();
 
-    if (!source || !target) throw buildHttpError('common.INVALID_PARAMS', 400);
+    if (!source || (!parsed.replace_source && !target)) throw buildHttpError('common.INVALID_PARAMS', 400);
 
     const sourceNormalized = PathUtil.normalizeFsPathForCompare(source);
     const targetNormalized = PathUtil.normalizeFsPathForCompare(target);
-    if (PathUtil.isMutualConflictPath(sourceNormalized, targetNormalized)) {
+    if (!parsed.replace_source && PathUtil.isMutualConflictPath(sourceNormalized, targetNormalized)) {
       throw buildHttpError('mediaTool.SOURCE_TARGET_PATH_CONFLICT', 400);
     }
 
@@ -102,6 +96,8 @@ class VideoTransService {
         trans_config: cfg,
         non_video_policy: pol,
         update_time: now,
+        last_start_time: null,
+        last_end_time: now,
       });
       return { id: idNum };
     }

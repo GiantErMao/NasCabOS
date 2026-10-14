@@ -19,11 +19,11 @@ function ensureTaskWorker({ singletonWorkerManager, initUtil, Logger, serverId, 
     onStop: async (code, signal) => {
       try {
         await knexMain('media_tool_video_trans').where({ id: taskId, status: 'running' }).update({
-          status: 'stopped',
+          status: 'error',
           progress: '',
-          last_error: null,
+          last_error: 'video_trans_worker_interrupted',
           update_time: new Date(),
-          last_end_time: new Date(),
+          last_end_time: null,
         });
       } catch (_) {}
       Logger.info(`🧷 videoTrans stopped: ${workerName}`, code, signal);
@@ -31,11 +31,11 @@ function ensureTaskWorker({ singletonWorkerManager, initUtil, Logger, serverId, 
     onError: async err => {
       try {
         await knexMain('media_tool_video_trans').where({ id: taskId, status: 'running' }).update({
-          status: 'stopped',
+          status: 'error',
           progress: '',
-          last_error: null,
+          last_error: 'video_trans_worker_interrupted',
           update_time: new Date(),
-          last_end_time: new Date(),
+          last_end_time: null,
         });
       } catch (_) {}
       Logger.error(`❌ videoTrans error: ${workerName}`, err);

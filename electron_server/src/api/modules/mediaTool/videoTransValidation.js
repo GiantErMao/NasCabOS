@@ -1,3 +1,4 @@
+const { normalizeSourcePath, normalizeVideoConfig } = require('./videoTransCore');
 const { body, validationResult } = require('express-validator');
 const { getLocalizedMessage } = require('../../../utils/i18nUtil');
 
@@ -6,7 +7,7 @@ function isAbsolutePath(value) {
   const v = value.trim();
   if (!v) return false;
   if (v.startsWith('/') || v.startsWith('\\\\')) return true;
-  return /^[a-zA-Z]:\\/.test(v);
+  return /^[a-zA-Z]:[\\/]/.test(v);
 }
 
 const VideoTransValidation = {
@@ -17,9 +18,16 @@ const VideoTransValidation = {
   validateUpsert() {
     return [
       body('id').optional().isInt({ min: 1 }).withMessage('validation.ID_INVALID'),
-      body('source_path').notEmpty().custom(isAbsolutePath).withMessage('validation.VALIDATION_ERROR'),
-      body('target_path').notEmpty().custom(isAbsolutePath).withMessage('validation.VALIDATION_ERROR'),
-      body('trans_config').notEmpty().withMessage('validation.VALIDATION_ERROR'),
+      body('source_path').customSanitizer(normalizeSourcePath).notEmpty().custom(isAbsolutePath).withMessage('validation.VALIDATION_ERROR'),
+      body('target_path')
+        .custom((v, { req }) => normalizeVideoConfig(req.body.trans_config).replace_source || isAbsolutePath(v))
+        .withMessage('validation.VALIDATION_ERROR'),
+      body('trans_config')
+        .custom(v => {
+          normalizeVideoConfig(v);
+          return true;
+        })
+        .withMessage('validation.VALIDATION_ERROR'),
       body('non_video_policy').notEmpty().isIn(['skip', 'copy']).withMessage('validation.VALIDATION_ERROR'),
     ];
   },
