@@ -4,7 +4,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { addMetaTubeFilenameTags } = require('../src/workers/videoIndex/nfoFetchWorker/metatubeFilenameTags');
+const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('../src/workers/videoIndex/nfoFetchWorker/metatubeFilenameTags');
 const { buildMovieNfo } = require('../src/workers/videoIndex/nfoFetchWorker/jellyfinNfo');
 
 for (const [suffix, expected] of [
@@ -28,7 +28,7 @@ test('shared MetaTube writer emits both NFO tags and updates the index', async (
   const writes = [];
   const updates = [];
   const context = {
-    path, addMetaTubeFilenameTags, buildMovieNfo,
+    path, addMetaTubeFilenameTags, mergeMovieMetadataGenres, buildMovieNfo,
     _mapMetaTubeMovieToNfo: () => ({ title: 'Title', tags: ['provider'] }),
     writeTextIfChanged: async (target, xml) => writes.push({ target, xml }),
     _updateIndexFromNfoAndArtwork: async args => updates.push(args),
@@ -44,6 +44,13 @@ test('shared MetaTube writer emits both NFO tags and updates the index', async (
     assert.match(xml, /<tag>中文字幕<\/tag>/);
     assert.match(xml, /<tag>破解版本<\/tag>/);
     assert.match(xml, /<tag>provider<\/tag>/);
+    assert.match(xml, /<genre>中文字幕<\/genre>/);
+    assert.match(xml, /<genre>破解版本<\/genre>/);
   }
   assert.equal(updates.length, 3);
+});
+
+
+test('merges filterable labels without provider tags or duplicate genres', () => {
+  assert.deepEqual(mergeMovieMetadataGenres(['Drama', '中文字幕'], ['provider', 'ABC-123', '中文字幕', '破解版本']), ['Drama', '中文字幕', '破解版本']);
 });

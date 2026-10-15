@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { XMLValidator } = require('fast-xml-parser');
 const { parseNfoXml } = require('../src/workers/videoIndex/nfoParser');
-const { addMetaTubeFilenameTags } = require('../src/workers/videoIndex/nfoFetchWorker/metatubeFilenameTags');
+const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('../src/workers/videoIndex/nfoFetchWorker/metatubeFilenameTags');
 
 async function main() {
   const [database, backupRoot, mode] = process.argv.slice(2);
@@ -14,7 +14,7 @@ async function main() {
   }
   const apply = mode === '--apply';
   const db = new (require('better-sqlite3'))(database, { readonly: !apply, fileMustExist: true, timeout: 5000 });
-  const rows = db.prepare("SELECT id,path,filename,media_type,nfo_tags FROM video_index WHERE media_type IN ('movie','bdmv','video_ts') ORDER BY id").all();
+  const rows = db.prepare("SELECT id,path,filename,media_type,nfo_tags,nfo_genres FROM video_index WHERE media_type IN ('movie','bdmv','video_ts') ORDER BY id").all();
   const summary = { movies: rows.length, missingNfo: 0, invalidNfo: 0, matched: 0, nfoChanges: 0, indexChanges: 0, errors: [] };
   const plans = [];
   for (const row of rows) {
@@ -33,19 +33,30 @@ async function main() {
       if (expected.length) summary.matched++;
       const tags = addMetaTubeFilenameTags(parsed.tags, row.filename, { isDirectory: disc });
       const additions = tags.filter(tag => !(parsed.tags || []).includes(tag));
+      const genres = mergeMovieMetadataGenres(parsed.genres, tags);
+      const genreAdditions = genres.filter(genre => !(parsed.genres || []).includes(genre));
+      const indexGenres = genres.join(',');
+      const missingKeys = genres.filter(genre => !db.prepare("SELECT 1 FROM video_index2key WHERE index_id=? AND key_type='genres' AND key=?").get(row.id, genre));
       const newline = xml.includes('\r\n') ? '\r\n' : '\n';
-      const updated = additions.length ? xml.replace(/<\/movie\s*>/i, additions.map(tag => `  <tag>${tag}</tag>${newline}`).join('') + '</movie>') : xml;
+      const nodes = additions.map(tag => `  <tag>${tag}</tag>${newline}`).concat(genreAdditions.map(genre => `  <genre>${genre}</genre>${newline}`)).join('');
+      const updated = nodes ? xml.replace(/<\/movie\s*>/i, nodes + '</movie>') : xml;
       const indexTags = tags.join(',');
       if (updated !== xml) summary.nfoChanges++;
-      if (indexTags !== (row.nfo_tags || '')) summary.indexChanges++;
-      if (updated !== xml || indexTags !== (row.nfo_tags || '')) plans.push({ row, nfo, xml, updated, indexTags });
+      const indexChanged = indexTags !== (row.nfo_tags || '') || indexGenres !== (row.nfo_genres || '') || missingKeys.length > 0;
+      if (indexChanged) summary.indexChanges++;
+      if (updated !== xml || indexChanged) plans.push({ row, nfo, xml, updated, indexTags, indexGenres, missingKeys });
     } catch (e) { summary.errors.push({ id: row.id, error: e.message }); }
   }
   if (apply) {
     fs.mkdirSync(backupRoot, { recursive: true });
     await db.backup(path.join(backupRoot, 'nascab_video.db'));
-    fs.writeFileSync(path.join(backupRoot, 'manifest.json'), JSON.stringify(plans.map(p => ({ id: p.row.id, nfo: p.nfo, oldTags: p.row.nfo_tags, newTags: p.indexTags, backup: p.updated !== p.xml ? `${p.row.id}.nfo` : null })), null, 2), { flag: 'wx' });
-    const update = db.prepare('UPDATE video_index SET nfo_tags = ? WHERE id = ?');
+    fs.writeFileSync(path.join(backupRoot, 'manifest.json'), JSON.stringify(plans.map(p => ({ id: p.row.id, nfo: p.nfo, oldTags: p.row.nfo_tags, newTags: p.indexTags, oldGenres: p.row.nfo_genres, newGenres: p.indexGenres, backup: p.updated !== p.xml ? `${p.row.id}.nfo` : null })), null, 2), { flag: 'wx' });
+    const update = db.prepare('UPDATE video_index SET nfo_tags = ?, nfo_genres = ? WHERE id = ?');
+    const insertKey = db.prepare("INSERT INTO video_index2key (index_id,key,key_type) SELECT ?,?,'genres' WHERE NOT EXISTS (SELECT 1 FROM video_index2key WHERE index_id=? AND key=? AND key_type='genres')");
+    const syncIndex = db.transaction(p => {
+      update.run(p.indexTags, p.indexGenres, p.row.id);
+      for (const genre of p.missingKeys) insertKey.run(p.row.id, genre, p.row.id, genre);
+    });
     for (const p of plans) {
       // Refuse to overwrite metadata that changed after planning.
       if (fs.readFileSync(p.nfo, 'utf8') !== p.xml) throw new Error(`NFO changed during refresh: ${p.nfo}`);
@@ -53,9 +64,9 @@ async function main() {
         fs.copyFileSync(p.nfo, path.join(backupRoot, `${p.row.id}.nfo`), fs.constants.COPYFILE_EXCL);
         fs.writeFileSync(p.nfo, p.updated, 'utf8');
       }
-      update.run(p.indexTags, p.row.id);
+      syncIndex(p);
       const verified = parseNfoXml(fs.readFileSync(p.nfo, 'utf8'));
-      if (!verified || [...new Set(verified.tags)].join(',') !== p.indexTags) throw new Error(`Tag verification failed: ${p.nfo}`);
+      if (!verified || [...new Set(verified.tags)].join(',') !== p.indexTags || [...new Set(verified.genres)].join(',') !== p.indexGenres) throw new Error(`Tag verification failed: ${p.nfo}`);
     }
     fs.writeFileSync(path.join(backupRoot, 'summary.json'), JSON.stringify(summary, null, 2));
   }

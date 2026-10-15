@@ -8,7 +8,7 @@ import '../../../../../core/api/api_controller.dart';
 import '../../../../base/components/custom_extended_image.dart';
 import '../../../base/video_utils/video_item_utils.dart';
 import '../../../base/video_utils/video_utils.dart';
-import '../../../video_main/controller/video_main_controller.dart';
+import '../../../list/view/app_video_metadata_videos_page.dart';
 import '../../controller/video_detail_controller.dart';
 
 class AppVideoDetailTopSection extends StatelessWidget {
@@ -218,14 +218,14 @@ class _AppMetaLine extends StatelessWidget {
       height: 1.35,
     );
 
-    void openFilter(VideoFilterOverlayKind kind, String value) {
+    void openFilter({required String value, required bool isRegion}) {
       final v = value.trim();
       if (v.isEmpty) return;
-      if (!Get.isRegistered<VideoMainController>()) return;
-      Get.find<VideoMainController>().openFilterOverlay(
-        kind: kind,
-        value: v,
-        mediaType: mediaType,
+      Get.to(
+        () => isRegion
+            ? AppVideoMetadataVideosPage.region(value: v, mediaType: mediaType)
+            : AppVideoMetadataVideosPage.genre(value: v, mediaType: mediaType),
+        preventDuplicates: false,
       );
     }
 
@@ -233,7 +233,7 @@ class _AppMetaLine extends StatelessWidget {
       ...metaParts.map((t) => Text(t, style: baseStyle)),
       ...regions.map(
         (r) => InkWell(
-          onTap: () => openFilter(VideoFilterOverlayKind.region, r),
+          onTap: () => openFilter(value: r, isRegion: true),
           child: Text(
             r,
             style: baseStyle?.copyWith(
@@ -245,7 +245,7 @@ class _AppMetaLine extends StatelessWidget {
       ),
       ...genres.map(
         (g) => InkWell(
-          onTap: () => openFilter(VideoFilterOverlayKind.genre, g),
+          onTap: () => openFilter(value: g, isRegion: false),
           child: Text(
             g,
             style: baseStyle?.copyWith(

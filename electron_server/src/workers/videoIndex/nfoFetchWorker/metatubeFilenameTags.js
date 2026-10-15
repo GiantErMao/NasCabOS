@@ -21,4 +21,13 @@ function addMetaTubeFilenameTags(tags, filename, { isDirectory = false } = {}) {
   return [...out];
 }
 
-module.exports = { addMetaTubeFilenameTags };
+// Only filename-derived labels join the existing genre/filter taxonomy.
+// Provider names, catalogue numbers and other NFO tags remain tags.
+function mergeMovieMetadataGenres(genres, tags) {
+  return [...new Set([
+    ...(Array.isArray(genres) ? genres : []),
+    ...(Array.isArray(tags) ? tags : []).filter(tag => tag === '中文字幕' || tag === '破解版本'),
+  ])];
+}
+
+module.exports = { addMetaTubeFilenameTags, mergeMovieMetadataGenres };
