@@ -11,6 +11,7 @@ data class VideoListItem(
     val nfoScore: Double,
     val nfoRegions: String,
     val nfoGenres: String,
+    val nfoTags: String = "",
     val posterPath: String,
     val fanartPath: String,
     val logoPath: String,

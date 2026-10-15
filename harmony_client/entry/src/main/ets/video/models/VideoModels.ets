@@ -87,6 +87,7 @@ export class VideoHomeItemBean {
   nfoScore: number = 0;
   nfoRegions: string = '';
   nfoGenres: string = '';
+  nfoTags: string = '';
   posterPath: string = '';
   fanartPath: string = '';
   logoPath: string = '';
@@ -113,6 +114,7 @@ export function parseVideoHomeItemBean(e: Object): VideoHomeItemBean {
   item.nfoScore = asNum(map['nfo_score']);
   item.nfoRegions = asStr(map['nfo_regions']);
   item.nfoGenres = asStr(map['nfo_genres']);
+  item.nfoTags = asStr(map['nfo_tags']);
   item.posterPath = asStr(map['poster_path']);
   item.fanartPath = asStr(map['fanart_path']);
   item.logoPath = asStr(map['logo_path']);

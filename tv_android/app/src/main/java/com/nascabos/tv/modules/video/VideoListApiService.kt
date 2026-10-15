@@ -170,6 +170,7 @@ object VideoListApiService {
                 nfoScore = nfoScore,
                 nfoRegions = nfoRegions,
                 nfoGenres = nfoGenres,
+                nfoTags = map["nfo_tags"]?.toString().orEmpty(),
                 posterPath = posterPath,
                 fanartPath = fanartPath,
                 logoPath = logoPath,

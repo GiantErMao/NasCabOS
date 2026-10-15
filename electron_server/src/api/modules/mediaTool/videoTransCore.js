@@ -13,6 +13,8 @@ function normalizeVideoConfig(raw) {
   const cfg = { ...value };
   if (cfg.replace_source !== undefined && typeof cfg.replace_source !== 'boolean') throw new Error('invalid_replace_source');
   cfg.replace_source = cfg.replace_source === true;
+  cfg.validation_mode = cfg.validation_mode ?? 'fast';
+  if (!['fast', 'strict'].includes(cfg.validation_mode)) throw new Error('invalid_validation_mode');
   for (const key of ['trim_start_seconds', 'trim_end_seconds']) {
     const v = cfg[key] ?? 0;
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error('invalid_trim_time');

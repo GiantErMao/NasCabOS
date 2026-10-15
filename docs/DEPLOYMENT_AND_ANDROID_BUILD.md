@@ -461,3 +461,32 @@ adb -s e6fc7cb7 logcat -d |
 VideoToolbox / D3D11VA 新增硬件解码、软件缩放、硬件编码路径。用户授权后，远端 Worker/helper 已备份并热更新，10 项路径测试及真实 VAAPI 回归验证通过，内外健康检查正常。容器未重启，新 Worker 加载更新；APK 仍为 2052。
 
 新镜像标签 `nascabos-custom:video-decode-20261014`，旧版本保留，详情见 [硬件解码保留记录](VIDEO_CONVERSION_SOFTWARE_FRAME_HW_DECODE_20261014.md)。
+
+## 18. 视频转换校验方式发布（2026-10-15）
+
+发布内容为视频转换任务的“校验方式”：默认快速校验，支持严格校验。Flutter Web、Android APK 和服务端均已部署；Harmony 源码虽同步实现，但本次未构建或发布 Harmony 客户端。
+
+- 远端部署目录：`/home/ermao/nascabos-video-validation-20261015/`；容器 `nascabos` 保持运行，未重启。发布前确认没有视频转换 Worker 正在运行。服务端新文件供新启动的 Worker 加载。
+- 服务端文件已分别备份为 `.backup-validation-20261015-v2053` 后缀：`/nascabos/src/api/modules/mediaTool/videoTransCore.js`、`/nascabos/src/workers/mediaTool/videoTrans/videoTransWorker.js`。Web 备份位于 `/nascabos/web/main.backup-validation-20261015-v2053`。
+- Web `main.dart.js` 本地与远端 SHA-256 一致：`ab48123fe744f7a35f57dafd61395e11d629acde0a3bfb7c0923d3b9daf94cd9`。首页及 `/health` 均返回 HTTP 200；部署后的服务端文件语法检查通过，默认及严格模式配置归一化分别返回 `fast`、`strict`。
+- 镜像标签：`nascabos-custom:video-validation-v2053-20261015`，同时更新了 `nascabos-custom:latest`。镜像 ID：`sha256:93940df5b789f071f41bafeb0923271ec40d14527ff9f751dfdbaed9b38f924a`。归档位于 `/home/ermao/appdata/myimage/nascabos-custom-video-validation-v2053-20261015.tar.gz`，约 2.8 GiB；SHA-256：`e8d46e3d4a52af562796ccc8f02a652a9a65ba914f76eed4d4db6b7fc99f0dcc`，归档生成期间 gzip 完整性检查通过。
+- Android APK：`flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2054-signed.apk`，版本 `1.2.7 (2054)`，SHA-256：`0bd07eae1473bb848d7ca41f66e83e113ebc0a3e67ae1c2a23ed726e01e4f80c`。使用本机 debug keystore 内部测试签名，不可用于商店正式发布；签名和 APK 16 KiB 对齐检查通过。
+- APK 已覆盖安装到 `e6fc7cb7`，设备原版本为 `1.2.7 (2053)`；安装后确认版本为 `1.2.7 (2054)`，Activity 启动返回 `Status: ok`。首次启动停留在系统权限授权页，尚未验证客户端业务交互。
+- Flutter Web 与 APK 构建成功。Web 构建打印了现有依赖的 Wasm dry-run 兼容性提示，但标准 dart2js Release 构建通过。未运行视频转换端到端媒体任务验证。
+
+## 19. MetaTube NFO 标签和电影角标（2026-10-15）
+
+服务端文件名标签策略与电影列表/首页 `nfo_tags` 字段已部署，两个 API Worker 滚动更新，保留两项正在运行的视频转换任务。Android `1.2.7 (2055)` 已覆盖安装至 ADB 设备 `e6fc7cb7`，实测“中”“破”“中 / 破”三种角标组合。未发布 Web、Harmony 或 TV 客户端，未触发刮削。
+
+发布清单、存量 NFO 刷新结果、备份及镜像信息见 [MetaTube 标签发布记录](METATUBE_NFO_TAGS_RELEASE_2055.md)。
+
+## 20. 视频校验与 MetaTube 标签更新（2026-10-15，2058）
+
+按当前工作区构建并部署视频校验方式、MetaTube 文件名标签和影视卡片角标更新。服务端与 Flutter Web 已部署，Android Release APK 已覆盖安装到 ADB 设备 `e6fc7cb7`。本次没有重建自定义 Docker 镜像，也没有发布 Harmony、Android TV 或 Apple TV 客户端。
+
+- 服务端发布包：`/home/ermao/nascabos-server-video-validation-metatube-v2058-20261015.tar.gz`，SHA-256：`913af3fd024c62a5dff168ce4d57b95af2487b55495245550a9d4e8d75a2d8f4`。部署 6 个定向文件：视频转换配置与 Worker、首页和影视列表 API、NFO runner 及 MetaTube 文件名标签 helper。旧文件备份在容器 `/nascabos_data/backups/server-video-validation-metatube-v2058-20261015/`。
+- 服务端文件在容器内逐个通过 `node --check`。两个 Express API Worker 依次优雅退出并自动补位；每次切换后的 `/health` 均返回 HTTP 200。Docker 容器没有重启，未执行 NFO 刮削或存量刷新。
+- Flutter Web Release 构建成功。构建输出包含既有依赖的 Wasm dry-run 兼容性提示，标准 Web 构建通过。归档 SHA-256：`8f76325250ce32905250347bc3d605906fbe090f847546349e7253d9283dcf84`；本地和远端 `main.dart.js` SHA-256 均为 `735716c1b52b9b6c9d20a35f5e94cac79cf0a372706ddb754a3283aecd4f5a91`。首页返回 HTTP 200；旧 Web 目录备份在 `/nascabos/web/main.backup-v2058-20261015`。
+- Android arm64 APK：`flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2058-signed.apk`，版本 `1.2.7 (2058)`，SHA-256：`b7a39395d31f1b38074ec4553448d6929e53d56183c706e2ecfe68e3e3cd3e30`。使用本机 debug keystore 签名，仅供内部测试，不可用于商店正式发布；签名验证和 16 KiB 对齐验证通过。
+- ADB 设备原版本为 `1.2.7 (2057)`。APK 覆盖安装成功，设备确认 `versionCode=2058`、`versionName=1.2.7`，Activity 已启动；安装后检查的最近日志没有发现崩溃记录。
+- 本次完成构建、语法及部署健康检查；未运行视频转换媒体端到端任务，也未做影视卡片 UI 的逐项实机验收。

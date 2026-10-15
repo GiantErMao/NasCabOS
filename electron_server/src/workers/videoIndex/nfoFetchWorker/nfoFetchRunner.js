@@ -18,6 +18,7 @@ const { TmdbClient } = require('./tmdbClient');
 const { MetaTubeClient, DEFAULT_METATUBE_BASE_URL, normalizeMetaTubeBaseUrl, parseMetaTubeScrapeId, buildMetaTubeScrapeId } = require('./metatubeClient');
 const { MetadataTranslateClient, normalizeTranslateApiUrl, normalizeTranslateTargetLanguage } = require('./metadataTranslateClient');
 const { buildMovieNfo, buildTvShowNfo, buildSeasonNfo, buildEpisodeNfo, writeTextIfChanged } = require('./jellyfinNfo');
+const { addMetaTubeFilenameTags } = require('./metatubeFilenameTags');
 const videoIndexIndexUtil = require('../videoIndexIndexUtil');
 const { readAndParseNfo, hasValidNfo } = require('../nfoParser');
 const { parseSeasonNumberFromName, parseEpisodeFromName, normalizeNameForNfoGuess } = require('../videoIndexUtil');
@@ -698,6 +699,7 @@ class NfoFetchRunner {
     const movieFolder = isDiscFolderMovie ? path.join(dirPath, filename) : '';
 
     let nfoData = _mapMetaTubeMovieToNfo(details);
+    nfoData.tags = addMetaTubeFilenameTags(nfoData.tags, filename, { isDirectory: isDiscFolderMovie });
     nfoData = await this.translateNfoData(nfoData);
     // Add the number after translation so title translation cannot alter it.
     const number = details.number ? String(details.number).trim() : '';

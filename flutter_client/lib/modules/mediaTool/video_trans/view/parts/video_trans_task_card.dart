@@ -162,6 +162,14 @@ class _VideoTransTaskCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             _KeyValueRow(
+              label: 'media_tool_video_trans_validation_mode'.tr,
+              value: config['validation_mode'] == 'strict'
+                  ? 'media_tool_video_trans_validation_strict'.tr
+                  : 'media_tool_video_trans_validation_fast'.tr,
+              selectable: false,
+            ),
+            const SizedBox(height: 6),
+            _KeyValueRow(
               label: 'media_tool_video_trans_replace_source'.tr,
               value: config['replace_source'] == true
                   ? 'media_tool_video_trans_enabled'.tr

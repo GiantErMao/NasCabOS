@@ -517,14 +517,15 @@ export function buildImgBatchUpsertBody(id: number | undefined, sourcePath: stri
 /** 视频转换 trans_config（对齐 Flutter _VideoTransDialogState._buildConfig） */
 export function buildVideoTransConfig(format: string, vcodec: string, acodec: string,
   resolution: string, videoBitrate: number | undefined, audioBitrate: number | undefined,
-  fps: number | undefined, threadCount: number, enableHwAccel: boolean): Record<string, Object> {
+  fps: number | undefined, threadCount: number, enableHwAccel: boolean, validationMode: string = 'fast'): Record<string, Object> {
   const cfg: Record<string, Object> = {
     'out_format': format,
     'vcodec': vcodec,
     'acodec': acodec,
     'resolution': resolution,
     'thread_count': threadCount,
-    'enable_hw_accel': enableHwAccel
+    'enable_hw_accel': enableHwAccel,
+    'validation_mode': validationMode
   };
   if (videoBitrate !== undefined) {
     cfg['video_bitrate_mbps'] = videoBitrate;

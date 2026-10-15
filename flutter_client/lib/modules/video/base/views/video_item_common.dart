@@ -542,3 +542,71 @@ class _Pill extends StatelessWidget {
     );
   }
 }
+
+/// A single compact badge group keeps metadata separate from card actions.
+class VideoMetadataBadges extends StatelessWidget {
+  final String tags;
+  const VideoMetadataBadges({super.key, required this.tags});
+
+  @override
+  Widget build(BuildContext context) {
+    final values = tags.split(',').map((tag) => tag.trim()).toSet();
+    final labels = [
+      if (values.contains('中文字幕')) ('中', '中文字幕', const Color(0xFF8FE4C6)),
+      if (values.contains('破解版本')) ('破', '破解版本', const Color(0xFFFFD18C)),
+    ];
+    if (labels.isEmpty) return const SizedBox.shrink();
+
+    return Semantics(
+      label: labels.map((entry) => entry.$2).join('、'),
+      child: ExcludeSemantics(
+        child: IgnorePointer(
+          child: Container(
+            height: 23,
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xE6212832),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x26000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < labels.length; i++) ...[
+                  if (i > 0)
+                    Container(
+                      width: 1,
+                      height: 10,
+                      color: Colors.white.withValues(alpha: 0.18),
+                    ),
+                  SizedBox(
+                    width: 22,
+                    child: Center(
+                      child: Text(
+                        labels[i].$1,
+                        textScaler: TextScaler.noScaling,
+                        style: TextStyle(
+                          color: labels[i].$3,
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -321,6 +321,12 @@ export struct MediaToolTaskCard {
             value: this.item.config['replace_source'] === true ? L10n.t('media_tool_video_trans_enabled', '开启') : L10n.t('media_tool_video_trans_disabled', '关闭')
           })
           MediaToolKeyValueRow({
+            label: L10n.t('media_tool_video_trans_validation_mode', '校验方式'),
+            value: this.item.config['validation_mode'] === 'strict'
+              ? L10n.t('media_tool_video_trans_validation_strict', '严格校验')
+              : L10n.t('media_tool_video_trans_validation_fast', '快速校验')
+          })
+          MediaToolKeyValueRow({
             label: L10n.t('media_tool_video_trans_trim_range', '裁剪区间'),
             value: `${this.configText('trim_start_seconds', '0')}–${this.configText('trim_end_seconds', '0')} s`
           })

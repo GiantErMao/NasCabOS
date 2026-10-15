@@ -1,3 +1,4 @@
+import { VideoMetadataBadges } from './VideoCoverImage';
 import { AppTheme } from '../../core/theme/AppTheme';
 import { NavUtil } from '../../common/NavUtil';
 import { AppRouter } from '../../router/AppRouter';
@@ -44,6 +45,13 @@ export struct VideoItemRecommend {
           colors: [['#C7000000', 0], ['#26000000', 0.5], ['#00000000', 1]]
         })
         .hitTestBehavior(HitTestMode.None)
+      Row() {
+        Blank()
+        VideoMetadataBadges({ tags: this.item.nfoTags })
+      }
+      .width('100%')
+      .padding(8)
+      .position({ x: 0, y: 0 })
       // 标题/元信息 + 底部角标行
       Column({ space: 10 }) {
         Column({ space: 2 }) {

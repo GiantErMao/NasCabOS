@@ -42,6 +42,7 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
   String _format = 'source';
   String _previousFormat = 'source';
   bool _replaceSource = false;
+  String _validationMode = 'fast';
   late final TextEditingController _trimStartCtrl;
   late final TextEditingController _trimEndCtrl;
   bool get _isTrimming =>
@@ -140,6 +141,7 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     _fpsMode = fps != null && fps > 0 ? 'custom' : 'auto';
 
     _replaceSource = cfg['replace_source'] == true;
+    _validationMode = _normalizeIn(cfg['validation_mode']?.toString(), ['fast', 'strict'], fallback: 'fast');
     if (_replaceSource) _format = 'source';
     _previousFormat = _format;
     _trimStartCtrl = TextEditingController(
@@ -252,6 +254,7 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
     final m = <String, dynamic>{
       'out_format': _replaceSource ? 'source' : _format,
       'replace_source': _replaceSource,
+      'validation_mode': _validationMode,
       'trim_start_seconds': num.tryParse(_trimStartCtrl.text.trim()) ?? 0,
       'trim_end_seconds': num.tryParse(_trimEndCtrl.text.trim()) ?? 0,
       'vcodec': _vcodec,
@@ -397,6 +400,20 @@ class _VideoTransDialogState extends State<_VideoTransDialog> {
                           _ensureResolutionValid();
                         }),
                 ),
+                const SizedBox(height: 12),
+                CustomDropdownField<String>(
+                  value: _validationMode,
+                  labelText: 'media_tool_video_trans_validation_mode'.tr,
+                  enabled: !disabled,
+                  items: [
+                    DropdownMenuItem(value: 'fast', child: Text('media_tool_video_trans_validation_fast'.tr)),
+                    DropdownMenuItem(value: 'strict', child: Text('media_tool_video_trans_validation_strict'.tr)),
+                  ],
+                  onChanged: disabled ? null : (value) {
+                    if (value == 'fast' || value == 'strict') setState(() => _validationMode = value!);
+                  },
+                ),
+                const SizedBox(height: 12),
                 if (!_replaceSource) ...[
                   CustomTextField(
                     controller: _targetCtrl,

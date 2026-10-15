@@ -11,6 +11,7 @@ class VideoHomeItemBean {
   final double nfoScore;
   final String nfoRegions;
   final String nfoGenres;
+  final String nfoTags;
   final String posterPath;
   final String fanartPath;
   final String logoPath;
@@ -34,6 +35,7 @@ class VideoHomeItemBean {
     required this.nfoScore,
     required this.nfoRegions,
     required this.nfoGenres,
+    this.nfoTags = '',
     required this.posterPath,
     required this.fanartPath,
     required this.logoPath,
@@ -58,6 +60,7 @@ class VideoHomeItemBean {
     double? nfoScore,
     String? nfoRegions,
     String? nfoGenres,
+    String? nfoTags,
     String? posterPath,
     String? fanartPath,
     String? logoPath,
@@ -81,6 +84,7 @@ class VideoHomeItemBean {
       nfoScore: nfoScore ?? this.nfoScore,
       nfoRegions: nfoRegions ?? this.nfoRegions,
       nfoGenres: nfoGenres ?? this.nfoGenres,
+      nfoTags: nfoTags ?? this.nfoTags,
       posterPath: posterPath ?? this.posterPath,
       fanartPath: fanartPath ?? this.fanartPath,
       logoPath: logoPath ?? this.logoPath,
@@ -113,6 +117,7 @@ class VideoHomeItemBean {
       nfoScore: (json['nfo_score'] as num?)?.toDouble() ?? 0,
       nfoRegions: (json['nfo_regions'] as String?) ?? '',
       nfoGenres: (json['nfo_genres'] as String?) ?? '',
+      nfoTags: (json['nfo_tags'] as String?) ?? '',
       posterPath: (json['poster_path'] as String?) ?? '',
       fanartPath: (json['fanart_path'] as String?) ?? '',
       logoPath: (json['logo_path'] as String?) ?? '',

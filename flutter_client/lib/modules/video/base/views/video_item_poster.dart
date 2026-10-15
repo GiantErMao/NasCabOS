@@ -138,10 +138,15 @@ class _VideoItemPosterState extends State<VideoItemPoster> {
                           hovered: _hovered,
                           fit: BoxFit.cover,
                         ),
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: VideoMetadataBadges(tags: item.nfoTags),
+                        ),
                         if (_hovered || _effectiveFavorite)
                           Positioned(
                             top: 6,
-                            left: 6,
+                            right: 6,
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(

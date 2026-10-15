@@ -1,3 +1,4 @@
+import 'video_item_common.dart';
 import 'package:NasCabOS/core/routes/app_routes.dart';
 import 'package:NasCabOS/modules/base/components/custom_extended_image.dart';
 import 'package:NasCabOS/modules/video/base/beans/video_item_bean.dart';
@@ -463,6 +464,11 @@ class AppVideoItemPoster extends StatelessWidget {
                     ),
                   ),
                   Positioned(
+                    top: 8,
+                    left: 8,
+                    child: VideoMetadataBadges(tags: item.nfoTags),
+                  ),
+                  Positioned(
                     top: 6,
                     right: 6,
                     child: Material(
@@ -494,8 +500,8 @@ class AppVideoItemPoster extends StatelessWidget {
                   ),
                   if (item.isFavorite)
                     Positioned(
-                      top: 6,
-                      left: 6,
+                      top: 42,
+                      right: 6,
                       child: Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(

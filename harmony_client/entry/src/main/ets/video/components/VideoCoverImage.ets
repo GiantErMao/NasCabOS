@@ -73,6 +73,13 @@ export struct VideoCoverImage {
           colors: [['#C7000000', 0], ['#00000000', 0.55]]
         })
         .hitTestBehavior(HitTestMode.None)
+      Row() {
+        Blank()
+        VideoMetadataBadges({ tags: this.item.nfoTags })
+      }
+      .width('100%')
+      .padding(8)
+      .position({ x: 0, y: 36 })
       if (this.showBadges) {
         Row() {
           if (this.rating > 0) {
@@ -96,5 +103,27 @@ export struct VideoCoverImage {
     .borderRadius(this.imageRadius)
     .clip(true)
     .border({ width: 1, color: AppTheme.withAlpha(AppTheme.current().onSurface, 0.08) })
+  }
+}
+
+@ComponentV2
+export struct VideoMetadataBadges {
+  @Param tags: string = '';
+
+  build() {
+    Row({ space: 4 }) {
+      ForEach(['中文字幕', '破解版本'], (tag: string) => {
+        if (this.tags.split(',').some((value: string) => value.trim() === tag)) {
+          Text(tag === '中文字幕' ? '中' : '破')
+            .fontSize(11)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+            .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+            .borderRadius(6)
+            .backgroundColor('#CC000000')
+        }
+      })
+    }
+    .hitTestBehavior(HitTestMode.None)
   }
 }

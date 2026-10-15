@@ -89,6 +89,11 @@ class _VideoItemRecommendState extends State<VideoItemRecommend> {
                     ),
                   ),
                   Positioned(
+                    top: 8,
+                    left: 8,
+                    child: VideoMetadataBadges(tags: item.nfoTags),
+                  ),
+                  Positioned(
                     left: 12,
                     right: 12,
                     bottom: 42,

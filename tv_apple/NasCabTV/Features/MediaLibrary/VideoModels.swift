@@ -13,6 +13,7 @@ struct TVVideoItem: Identifiable, Equatable {
     let nfoScore: Double
     let nfoRegions: String
     let nfoGenres: String
+    let nfoTags: String
     let posterPath: String
     let fanartPath: String
     let logoPath: String
@@ -44,6 +45,7 @@ struct TVVideoItem: Identifiable, Equatable {
         nfoScore: Double,
         nfoRegions: String,
         nfoGenres: String,
+        nfoTags: String = "",
         posterPath: String,
         fanartPath: String,
         logoPath: String,
@@ -72,6 +74,7 @@ struct TVVideoItem: Identifiable, Equatable {
         self.nfoScore = nfoScore
         self.nfoRegions = nfoRegions
         self.nfoGenres = nfoGenres
+        self.nfoTags = nfoTags
         self.posterPath = posterPath
         self.fanartPath = fanartPath
         self.logoPath = logoPath
@@ -132,6 +135,7 @@ struct TVVideoItem: Identifiable, Equatable {
         self.nfoScore = double("nfo_score")
         self.nfoRegions = string("nfo_regions")
         self.nfoGenres = string("nfo_genres")
+        self.nfoTags = string("nfo_tags")
         self.posterPath = string("poster_path")
         self.fanartPath = string("fanart_path")
         self.logoPath = string("logo_path")

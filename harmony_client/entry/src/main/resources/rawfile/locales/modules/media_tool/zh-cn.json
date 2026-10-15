@@ -158,5 +158,8 @@
   "media_tool_video_trans_trim_range": "裁剪区间",
   "media_tool_video_trans_enabled": "开启",
   "media_tool_video_trans_disabled": "关闭",
-  "media_tool_video_trans_path_hint": "粘贴服务器绝对路径"
+  "media_tool_video_trans_path_hint": "粘贴服务器绝对路径",
+  "media_tool_video_trans_validation_mode": "校验方式",
+  "media_tool_video_trans_validation_fast": "快速校验",
+  "media_tool_video_trans_validation_strict": "严格校验"
 }

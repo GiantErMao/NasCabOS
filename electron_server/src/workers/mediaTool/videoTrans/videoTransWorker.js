@@ -337,7 +337,7 @@ async function getMediaDurationSec(filePath) {
 function probeMedia(file) {
   return new Promise((resolve, reject) => ffmpeg.ffprobe(file, (err, data) => (err ? reject(err) : resolve(data))));
 }
-async function validateOutput({ tmp, expectedDuration, spec, stopSignal, onCommand }) {
+async function validateOutput({ tmp, metadata, expectedDuration, spec, cfg = {}, stopSignal, onCommand }) {
   const output = await probeMedia(tmp);
   const video = output.streams?.find(s => s.codec_type === 'video');
   if (!(await fs.stat(tmp)).size || !video) throw new Error('output_video_invalid');
@@ -357,19 +357,71 @@ async function validateOutput({ tmp, expectedDuration, spec, stopSignal, onComma
     if (!Number.isFinite(duration) || duration <= 0 || (Number.isFinite(expectedDuration) && Math.abs(duration - expectedDuration) > tolerance)) throw new Error('output_duration_mismatch');
   }
   if (stopSignal()) throw new Error('replacement_stopped');
-  // Decode a short video sample. Probing checks the full duration without a second full-file decode.
-  await new Promise((resolve, reject) => {
-    const cmd = ffmpeg(tmp)
-      .outputOptions(['-map 0:v:0', '-an', '-sn', '-dn', '-t 3', '-v error', '-xerror', '-f null'])
-      .output('-')
-      .on('start', () => {
-        if (typeof onCommand === 'function') onCommand(cmd);
-        if (stopSignal()) cmd.kill('SIGKILL');
-      })
-      .on('error', reject)
-      .on('end', resolve);
-    cmd.run();
-  });
+  const sourceAudio = metadata?.streams?.find(s => s.codec_type === 'audio');
+  const outputAudio = output.streams?.find(s => s.codec_type === 'audio');
+  const audioSupported = !['gif', 'webp'].includes(spec.muxer);
+  if (audioSupported && sourceAudio && !outputAudio) throw new Error('output_audio_missing');
+
+  if (cfg.validation_mode === 'strict') {
+    if (audioSupported && sourceAudio && outputAudio && cfg.replace_source) {
+      const duration = Number(output.format?.duration || video.duration);
+      const frameRate = String(video.avg_frame_rate || '0/1').split('/').map(Number);
+      const fps = frameRate[0] / frameRate[1];
+      const tolerance = Math.max(0.25, Number.isFinite(fps) && fps > 0 ? 3 / fps : 0.25);
+      const audioDuration = Number(outputAudio.duration);
+      const sourceAudioDuration = Number(sourceAudio.duration);
+      if (
+        Number.isFinite(audioDuration) && Number.isFinite(sourceAudioDuration) &&
+        sourceAudioDuration >= (cfg.trim_end_seconds || Number(metadata.format?.duration)) - tolerance &&
+        Math.abs(audioDuration - expectedDuration) > tolerance
+      ) throw new Error('output_audio_duration_mismatch');
+      if (Math.abs(Number(video.start_time || 0) - Number(outputAudio.start_time || 0)) > tolerance) throw new Error('output_audio_sync_mismatch');
+    }
+    // Strict mode preserves the original full decode behavior for source replacement.
+    if (cfg.replace_source) {
+      await new Promise((resolve, reject) => {
+        const cmd = ffmpeg(tmp)
+          .outputOptions(['-v error', '-xerror', '-f null'])
+          .output('-')
+          .on('start', () => {
+            if (typeof onCommand === 'function') onCommand(cmd);
+            if (stopSignal()) cmd.kill('SIGKILL');
+          })
+          .on('error', reject)
+          .on('end', resolve);
+        cmd.run();
+      });
+    }
+  } else {
+    const duration = Number(output.format?.duration || video.duration);
+    const frameRate = String(video.avg_frame_rate || '0/1').split('/').map(Number);
+    const fps = frameRate[0] / frameRate[1];
+    const tolerance = Math.max(0.25, Number.isFinite(fps) && fps > 0 ? 3 / fps : 0.25);
+    if (audioSupported && sourceAudio && outputAudio) {
+      const audioDuration = Number(outputAudio.duration);
+      if (Number.isFinite(audioDuration) && audioDuration > 0 && Math.abs(audioDuration - duration) > Math.max(tolerance, 1)) throw new Error('output_audio_duration_mismatch');
+      if (Math.abs(Number(video.start_time || 0) - Number(outputAudio.start_time || 0)) > tolerance) throw new Error('output_audio_sync_mismatch');
+    }
+    const sampleLength = Math.min(1.5, Math.max(0.25, duration / 3));
+    const starts = [...new Set([0, Math.max(0, duration / 2 - sampleLength / 2), Math.max(0, duration - sampleLength)])];
+    for (const start of starts) {
+      if (stopSignal()) throw new Error('replacement_stopped');
+      await new Promise((resolve, reject) => {
+        const cmd = ffmpeg(tmp)
+          .seekInput(start)
+          .duration(sampleLength)
+          .outputOptions(['-map 0:v:0', '-map 0:a?', '-sn', '-dn', '-v error', '-xerror', '-f null'])
+          .output('-')
+          .on('start', () => {
+            if (typeof onCommand === 'function') onCommand(cmd);
+            if (stopSignal()) cmd.kill('SIGKILL');
+          })
+          .on('error', reject)
+          .on('end', resolve);
+        cmd.run();
+      });
+    }
+  }
   if (stopSignal()) throw new Error('replacement_stopped');
 }
 
@@ -498,7 +550,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
           }
           try {
             if (typeof onProgress === 'function') onProgress({ stage: 'validating' });
-            await validateOutput({ tmp, expectedDuration: effectiveDurationSec, spec, stopSignal, onCommand });
+            await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
             if (stopSignal()) throw new Error('replacement_stopped');
             if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
             else await fs.move(tmp, outputPath, { overwrite: false });
@@ -603,7 +655,7 @@ async function transcodeOne({ inputPath, outputPath, cfg, stopSignal, onCommand,
           }
           try {
             if (typeof onProgress === 'function') onProgress({ stage: 'validating' });
-            await validateOutput({ tmp, expectedDuration: effectiveDurationSec, spec, stopSignal, onCommand });
+            await validateOutput({ tmp, metadata, expectedDuration: effectiveDurationSec, spec, cfg, stopSignal, onCommand });
             if (stopSignal()) throw new Error('replacement_stopped');
             if (sourceGuard) await sourceGuard.commit(tmp, stopSignal);
             else await fs.move(tmp, outputPath, { overwrite: false });

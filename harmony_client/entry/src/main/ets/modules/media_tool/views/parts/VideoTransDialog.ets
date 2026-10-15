@@ -40,6 +40,7 @@ export struct VideoTransDialog {
   @Local targetText: string = '';
   @Local format: string = 'source';
   @Local replaceSource: boolean = false;
+  @Local validationMode: string = 'fast';
   @Local trimStartText: string = '0';
   @Local trimEndText: string = '0';
   private previousFormat: string = 'source';
@@ -102,6 +103,7 @@ export struct VideoTransDialog {
     this.nonVideoPolicy = pol === 'copy' ? 'copy' : 'skip';
     const cfg = init.config;
     this.replaceSource = cfg['replace_source'] === true;
+    this.validationMode = normalizeIn(cfgText(cfg, 'validation_mode'), ['fast', 'strict'], 'fast');
     this.trimStartText = cfgText(cfg, 'trim_start_seconds') || '0';
     this.trimEndText = cfgText(cfg, 'trim_end_seconds') || '0';
     this.format = normalizeIn(cfgText(cfg, 'out_format'), ['source', 'mp4', 'mov', 'avi', 'gif', 'webp'], 'mp4');
@@ -172,7 +174,7 @@ export struct VideoTransDialog {
     const threadCount = Math.min(50, Math.max(1, threadRaw === undefined ? 5 : Math.round(threadRaw)));
     this.threadCountText = `${threadCount}`;
     const cfg = buildVideoTransConfig(this.replaceSource ? 'source' : this.format, this.vcodec, this.acodec, this.resolution,
-      vb, ab, fps, threadCount, this.enableHwAccel);
+      vb, ab, fps, threadCount, this.enableHwAccel, this.validationMode);
     cfg['replace_source'] = this.replaceSource;
     cfg['trim_start_seconds'] = Number(this.trimStartText);
     cfg['trim_end_seconds'] = Number(this.trimEndText);
@@ -302,6 +304,16 @@ export struct VideoTransDialog {
           }
         })
         Text(L10n.t('media_tool_video_trans_replace_hint', '输出校验通过后替换；重新启动已完成任务会再次裁剪。'))
+        MediaToolSelectField({
+          label: L10n.t('media_tool_video_trans_validation_mode', '校验方式'),
+          value: this.validationMode,
+          disabled: this.disabled,
+          options: [
+            new PickOption('fast', L10n.t('media_tool_video_trans_validation_fast', '快速校验')),
+            new PickOption('strict', L10n.t('media_tool_video_trans_validation_strict', '严格校验'))
+          ],
+          onChanged: (value: string): void => { this.validationMode = value; }
+        })
         Row({ space: 12 }) {
           Column() {
             Text(L10n.t('media_tool_video_trans_trim_start', '起始时间（秒）'))

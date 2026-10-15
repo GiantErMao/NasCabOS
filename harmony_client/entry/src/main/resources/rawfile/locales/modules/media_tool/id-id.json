@@ -158,5 +158,8 @@
   "media_tool_video_trans_trim_range": "Trim range",
   "media_tool_video_trans_enabled": "On",
   "media_tool_video_trans_disabled": "Off",
-  "media_tool_video_trans_path_hint": "Paste an absolute server path"
+  "media_tool_video_trans_path_hint": "Paste an absolute server path",
+  "media_tool_video_trans_validation_mode": "Validation mode",
+  "media_tool_video_trans_validation_fast": "Fast validation",
+  "media_tool_video_trans_validation_strict": "Strict validation"
 }

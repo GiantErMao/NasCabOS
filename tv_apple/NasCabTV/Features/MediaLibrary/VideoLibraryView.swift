@@ -1760,6 +1760,14 @@ private struct TVVideoPosterCard: View {
                                     fg: Color(red: 229/255, green: 181/255, blue: 39/255)
                                 )
                             }
+                            ForEach(["中文字幕", "破解版本"], id: \.self) { tag in
+                                if item.nfoTags.split(separator: ",").contains(where: {
+                                    $0.trimmingCharacters(in: .whitespacesAndNewlines) == tag
+                                }) {
+                                    pill(text: tag == "中文字幕" ? "中" : "破",
+                                         bg: Color.black.opacity(0.7), fg: .white)
+                                }
+                            }
                             Spacer()
                             if !typeText.trimmingCharacters(in: .whitespaces).isEmpty {
                                 pill(

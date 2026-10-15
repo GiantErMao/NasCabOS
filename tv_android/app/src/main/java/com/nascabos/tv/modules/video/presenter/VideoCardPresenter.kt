@@ -44,6 +44,12 @@ class VideoCardPresenter(
         val subtitle = view.findViewById<TextView>(R.id.video_card_subtitle)
         val genres = view.findViewById<TextView>(R.id.video_card_genres)
 
+        val metadataTags = view.findViewById<TextView>(R.id.video_card_metadata_tags)
+        val tags = video.nfoTags.split(',').map { it.trim() }.toSet()
+        metadataTags.text = listOf("中文字幕" to "中", "破解版本" to "破")
+            .filter { it.first in tags }.joinToString(" ") { it.second }
+        metadataTags.visibility = if (metadataTags.text.isEmpty()) View.GONE else View.VISIBLE
+
         val mt = video.mediaType.trim().lowercase()
         typeText.text =
             when (mt) {
