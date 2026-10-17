@@ -139,6 +139,9 @@ class PlayerController extends GetxController with WindowListener {
   bool _singleLoopCooldown = false;
   Timer? _singleLoopCooldownTimer;
 
+  // Ended and outro callbacks can overlap while the next source is loading.
+  bool _playbackCompletionConsumed = false;
+
   Worker? _autoSkipWorker;
   int _openSkipStartSeconds = 0;
   int _openSkipEndSeconds = 0;

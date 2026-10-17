@@ -20,6 +20,7 @@ extension PlayerControls on PlayerController {
   /// 上一个
   void playPrev() {
     if (currentIndex.value > 0) {
+      _playbackCompletionConsumed = true;
       currentIndex.value--;
       _initializePlayer();
     }
@@ -28,6 +29,7 @@ extension PlayerControls on PlayerController {
   /// 下一个
   void playNext() {
     if (currentIndex.value < playlist.length - 1) {
+      _playbackCompletionConsumed = true;
       currentIndex.value++;
       _initializePlayer();
     }
@@ -36,6 +38,7 @@ extension PlayerControls on PlayerController {
   void playAt(int index) {
     if (index < 0 || index >= playlist.length) return;
     if (currentIndex.value == index) return;
+    _playbackCompletionConsumed = true;
     currentIndex.value = index;
     _initializePlayer(keepPosition: false);
   }

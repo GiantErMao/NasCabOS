@@ -9,6 +9,7 @@ extension PlayerPolling on PlayerController {
 
   void _startPositionPolling() {
     _stopPositionPolling();
+    final generation = _initGeneration;
     _positionPollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (isClosed) return;
       final engine = playbackEngine.value;
@@ -19,7 +20,13 @@ extension PlayerPolling on PlayerController {
       _isPollingPosition = true;
 
       void applyPosition(Duration? pos) {
-        if (isClosed) return;
+        if (isClosed ||
+            _isClosingPlayer ||
+            !isInitialized.value ||
+            generation != _initGeneration ||
+            !identical(playbackEngine.value, engine)) {
+          return;
+        }
         if (pos == null) return;
         final safePos = pos.isNegative ? Duration.zero : pos;
         position.value = _transcodeTimelinePosition(safePos);
@@ -40,9 +47,11 @@ extension PlayerPolling on PlayerController {
       final fvc = engine.fvpVideoController;
       if (fvc != null) {
         unawaited(
-          fvc.position
-              .then(applyPosition)
-              .whenComplete(() => _isPollingPosition = false),
+          fvc.position.then(applyPosition).whenComplete(() {
+            if (generation == _initGeneration) {
+              _isPollingPosition = false;
+            }
+          }),
         );
       } else {
         applyPosition(engine.value.position);

@@ -10,6 +10,7 @@ extension PlayerListener on PlayerController {
 
     if (isClosed) return;
     if (_isClosingPlayer) return;
+    if (!isInitialized.value) return;
 
     final pv = engine.value;
     if (pv.hasError) {
@@ -73,6 +74,8 @@ extension PlayerListener on PlayerController {
   void _handlePlaybackComplete() {
     if (isClosed) return;
     if (_isClosingPlayer) return;
+    if (!isInitialized.value || _playbackCompletionConsumed) return;
+    if (_singleLoopCooldown) return;
     final mode = loopMode.value;
     if (mode == 'single') {
       _singleLoopCooldownTimer?.cancel();
@@ -88,6 +91,14 @@ extension PlayerListener on PlayerController {
       }());
       return;
     }
+
+    // Claim completion before changing currentIndex or starting async teardown.
+    // Keep it claimed until the replacement engine is ready to report progress.
+    if (mode == 'sequence' && currentIndex.value >= playlist.length - 1) {
+      return;
+    }
+    if (playlist.length <= 1 && mode == 'shuffle') return;
+    _playbackCompletionConsumed = true;
 
     if (mode == 'shuffle') {
       if (playlist.length <= 1) return;

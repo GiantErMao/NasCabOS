@@ -232,6 +232,7 @@ extension PlayerPlayback on PlayerController {
     print(
       "----------------------------------初始化播放器----------------------------------",
     );
+    _playbackCompletionConsumed = true;
     final media3HotSwap = _canMedia3HotSwap(keepPosition);
     if (!media3HotSwap) {
       await PlayerLifecycle._awaitGlobalDisposeQueueIfAndroid();
@@ -665,6 +666,7 @@ extension PlayerPlayback on PlayerController {
       }
       isPlaying.value = true;
 
+      _playbackCompletionConsumed = false;
       localEngine.addListener(_videoListener);
 
       if (currentQuality.value != 'original') {
@@ -784,6 +786,7 @@ extension PlayerPlayback on PlayerController {
     }
     isPlaying.value = true;
 
+    _playbackCompletionConsumed = false;
     engine.addListener(_videoListener);
 
     if (currentQuality.value != 'original') {
