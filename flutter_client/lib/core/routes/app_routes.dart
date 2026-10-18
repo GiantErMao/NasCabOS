@@ -12,6 +12,7 @@ import '../../modules/photo/timeline/view/pc_photo_timeline.dart';
 import '../../modules/photo/timeline/view/app_photo_timeline_view.dart';
 import '../../modules/video/detail/view/video_detail_page.dart';
 import '../../modules/video_player/views/app_video_player_page.dart';
+import '../../modules/video_player/playback/external_player.dart';
 import '../../modules/video_player/views/pc_video_player_view.dart';
 import '../../modules/video/video_main/controller/video_main_controller.dart';
 import '../../modules/fileShareServer/views/file_share_server_view.dart';
@@ -122,6 +123,15 @@ class AppRoutes {
       'initialIndex': initialIndex,
       'ignoreFindSub': ignoreFindSub,
     };
+    // 用户选择外部播放器时，把原画直链交给 Pico 自带 / 系统播放器，不进入内置播放页。
+    // 拉起失败则回退到内置播放器。
+    final mode = await ExternalPlayerModeCache.mode();
+    if (mode != VideoPlayerMode.inApp) {
+      final idx = (initialIndex < 0 || initialIndex >= playlist.length)
+          ? 0
+          : initialIndex;
+      if (await ExternalPlayer.launch(playlist[idx], mode: mode)) return;
+    }
     final t = transition ?? Transition.noTransition;
     if (DeviceUtils.isDesktop) {
       await Get.to(

@@ -127,11 +127,37 @@ class DeviceUtils {
     return width >= phoneBreakpoint;
   }
 
-  /// 根据屏幕宽度判断是否为手机设备
+  /// 根据屏幕宽度判断是否为手机形态（窄屏 → 单栏 / 底部导航）。
+  ///
+  /// 原实现 `!isDesktopOrWeb && (width < phoneBreakpoint || isMobile)` 在 Android 上**恒为 true**
+  /// （`isMobile` 是按平台判定），于是 Pico 这类 1600dp 宽的大屏 Android 也走手机排版，
+  /// 且与同样按宽度判定的 `isDesktopLayout()` 自相矛盾（两者同时为 true）。改为纯宽度判定。
   static bool isPhone(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    return !isDesktopOrWeb && (width < phoneBreakpoint || isMobile);
+    if (isDesktopOrWeb) return false;
+    return MediaQuery.of(context).size.width < phoneBreakpoint;
   }
+
+  /// 大屏 Android 判定，宽度未知时返回 `null`。
+  ///
+  /// 注意 `isMobile` 是按**平台**判定（Android||iOS），在 Pico 这类大屏 Android 上同样为 true，
+  /// 会导致「只要是 Android 就当手机」的误判。这里按**可视宽度**再判一次。
+  ///
+  /// 视图尚未就绪时 `_webLogicalWidth()` 返回 0，此时**不给出结论**（返回 null）：
+  /// 现在 hd / regular 两个变体的 Manifest 都已各自声明正确方向，
+  /// 宽度未知时干脆不要调用 `setPreferredOrientations`，交给 Manifest 决定，
+  /// 这样才不会把 regular 变体的手机锁成横屏。
+  static bool? get isLargeScreenAndroidOrNull {
+    if (!isAndroid) return false;
+    final w = _webLogicalWidth();
+    if (w <= 0) return null;
+    return w >= phoneBreakpoint;
+  }
+
+  /// 大屏 Android；宽度未知时保守判为大屏。
+  ///
+  /// 仅用于排版等「判错也无害」的场合。**设置屏幕方向请用
+  /// [isLargeScreenAndroidOrNull]**，宽度未知时应保持 Manifest 声明的方向。
+  static bool get isLargeScreenAndroid => isLargeScreenAndroidOrNull ?? true;
 
   static bool isTabletLayout(BuildContext context) {
     final width = MediaQuery.of(context).size.width;

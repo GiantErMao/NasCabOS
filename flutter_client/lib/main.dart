@@ -64,9 +64,27 @@ Future<void> main() async {
   applyIoSelfSignedHttpOverridesIfNeeded();
   await FullScreen.ensureInitialized();
 
-  // 手机端固定竖屏，禁止自动横屏（视频播放器内可手动横屏）
+  // 手机端固定竖屏，禁止自动横屏（视频播放器内可手动横屏）。
+  // 大屏 Android（平板 / VR 一体机如 Pico）则固定**横屏**：
+  // Pico 依据 Manifest 声明的方向分配虚拟显示（landscape → 1600x900），
+  // 一旦被改成竖屏，整个 App 会缩成 506x900 的小窗。
+  //
+  // 宽度未知时（启动早期 platformDispatcher 的 physicalSize 仍为 0，如冷启动闪屏 /
+  // 多窗口 / 折叠屏）**完全不调用** setPreferredOrientations：
+  // hd / regular 两个变体的 Manifest 已各自声明正确方向，交给它决定才不会
+  // 把 regular 变体的手机锁成横屏。
   if (DeviceUtils.isMobile && !DeviceUtils.isWeb) {
-    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    final largeScreen = DeviceUtils.isLargeScreenAndroidOrNull;
+    if (largeScreen != null) {
+      await SystemChrome.setPreferredOrientations(
+        largeScreen
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [DeviceOrientation.portraitUp],
+      );
+    }
   }
 
   // 初始化缓存管理器

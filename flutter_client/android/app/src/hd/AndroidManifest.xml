@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HD 变体（大屏版）专属 Manifest 覆盖。
+  目标设备：Pico VR 一体机 / Pad 等高分设备。
+
+  关键：Pico 按 App 启动时声明的 android:screenOrientation 分配虚拟显示尺寸——
+  landscape 才会拿到 1600x900 大屏（portrait 只有 506x900 小窗）。
+  普通手机版见 src/regular/AndroidManifest.xml（portrait）。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.nascabos.mobile.MainActivity"
+            android:exported="true"
+            android:screenOrientation="landscape" />
+    </application>
+</manifest>

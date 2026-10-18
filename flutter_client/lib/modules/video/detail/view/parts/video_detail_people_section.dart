@@ -9,6 +9,7 @@ import '../../../../../core/api/api_controller.dart';
 import '../../../../../utils/device_utils.dart';
 import '../../../home/view/parts/video_horizontal_scroller.dart';
 import '../../../list/view/app_video_person_videos_page.dart';
+import '../../../base/video_utils/video_metadata_filter_opener.dart';
 import '../../controller/video_detail_controller.dart';
 import '../../../video_main/controller/video_main_controller.dart';
 
@@ -61,7 +62,7 @@ class VideoDetailPeopleSection extends StatelessWidget {
               void openOverlay() {
                 if (name.isEmpty) return;
                 final isDirector = role == 'video_detail_directors'.tr;
-                if (DeviceUtils.isMobile) {
+                if (DeviceUtils.isPhone(context)) {
                   Get.to(
                     () => isDirector
                         ? AppVideoPersonVideosPage.director(
@@ -75,13 +76,11 @@ class VideoDetailPeopleSection extends StatelessWidget {
                   );
                   return;
                 }
-                if (!Get.isRegistered<VideoMainController>()) return;
-                final main = Get.find<VideoMainController>();
-                final kind = isDirector
-                    ? VideoFilterOverlayKind.director
-                    : VideoFilterOverlayKind.actor;
-                main.openFilterOverlay(
-                  kind: kind,
+                // 大屏走筛选浮层；浮层宿主不存在时由 opener 退化为独立页面
+                VideoMetadataFilterOpener.open(
+                  kind: isDirector
+                      ? VideoFilterOverlayKind.director
+                      : VideoFilterOverlayKind.actor,
                   value: name,
                   mediaType: resolvedMediaType,
                 );

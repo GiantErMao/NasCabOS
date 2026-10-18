@@ -19,6 +19,9 @@ class MainActivity : AudioServiceActivity() {
             this,
             MethodChannel(messenger, "com.nascabos/playback"),
         )
+        ExternalPlayerMethodHandler { this }.install(
+            MethodChannel(messenger, "com.nascabos/external_player"),
+        )
         MethodChannel(messenger, "com.nascabos/storage").setMethodCallHandler { call, result ->
             if (call.method != "availableBytes") {
                 result.notImplemented()

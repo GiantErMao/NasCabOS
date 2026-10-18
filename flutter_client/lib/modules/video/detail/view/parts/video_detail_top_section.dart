@@ -9,6 +9,7 @@ import '../../controller/video_detail_controller.dart';
 import '../../../../base/components/custom_extended_image.dart';
 import '../../../base/video_utils/video_item_utils.dart';
 import '../../../base/video_utils/video_utils.dart';
+import '../../../base/video_utils/video_metadata_filter_opener.dart';
 import '../../../video_main/controller/video_main_controller.dart';
 
 /// 顶部大图区域：背景海报 + 渐变遮罩 + 标题/评分/元信息。
@@ -235,45 +236,41 @@ class _MetaLine extends StatelessWidget {
     );
 
     void openFilter(VideoFilterOverlayKind kind, String value) {
-      final v = value.trim();
-      if (v.isEmpty) return;
-      if (!Get.isRegistered<VideoMainController>()) return;
-      Get.find<VideoMainController>().openFilterOverlay(
+      VideoMetadataFilterOpener.open(
         kind: kind,
-        value: v,
+        value: value,
         mediaType: mediaType,
+      );
+    }
+
+    /// 可筛选的元数据项。做成胶囊而不是纯下划线文本，除了更像「标签」，
+    /// 更重要的是把点击热区做大 —— VR 里用手柄射线点一行小字很难命中。
+    Widget metaChip(String text, VoidCallback onTap) {
+      final colorScheme = theme.colorScheme;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: colorScheme.onSurface.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(text, style: baseStyle),
+          ),
+        ),
       );
     }
 
     final parts = <Widget>[
       ...metaParts.map((t) => Text(t, style: baseStyle)),
       ...regions.map(
-        (r) => InkWell(
-          onTap: () => openFilter(VideoFilterOverlayKind.region, r),
-          child: Text(
-            r,
-            style: baseStyle?.copyWith(
-              decoration: TextDecoration.underline,
-              decorationColor: theme.colorScheme.onSurface.withValues(
-                alpha: 0.45,
-              ),
-            ),
-          ),
-        ),
+        (r) => metaChip(r, () => openFilter(VideoFilterOverlayKind.region, r)),
       ),
       ...genres.map(
-        (g) => InkWell(
-          onTap: () => openFilter(VideoFilterOverlayKind.genre, g),
-          child: Text(
-            g,
-            style: baseStyle?.copyWith(
-              decoration: TextDecoration.underline,
-              decorationColor: theme.colorScheme.onSurface.withValues(
-                alpha: 0.45,
-              ),
-            ),
-          ),
-        ),
+        (g) => metaChip(g, () => openFilter(VideoFilterOverlayKind.genre, g)),
       ),
     ];
 

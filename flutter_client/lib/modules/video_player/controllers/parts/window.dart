@@ -137,22 +137,43 @@ extension PlayerWindow on PlayerController {
     });
   }
 
+  /// 应用基准方向是否为横屏。
+  ///
+  /// 大屏 Android（平板 / VR 一体机如 Pico）本身就以横屏运行（`android:screenOrientation`
+  /// 声明为 landscape，Pico 据此分配 1600x900 面板）。这类设备上播放器退出时如果按手机逻辑
+  /// 恢复成 `portraitUp`，会把**整个 App** 打成竖屏小窗——这不是"退出全屏"，而是改了 App 方向。
+  bool get _landscapeBaseline => DeviceUtils.isLargeScreenAndroid;
+
+  /// 恢复到应用基准方向（手机=竖屏，大屏 Android=横屏）。
+  Future<void> _restoreBaselineOrientation() async {
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      await SystemChrome.setPreferredOrientations(
+        _landscapeBaseline
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [DeviceOrientation.portraitUp],
+      );
+    } catch (_) {}
+  }
+
   Future<void> toggleOrientation() async {
     final next = !isLandscape.value;
     isLandscape.value = next;
-    if (DeviceUtils.isMobile) {
-      if (next) {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        await SystemChrome.setPreferredOrientations(const [
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-      } else {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        await SystemChrome.setPreferredOrientations(const [
-          DeviceOrientation.portraitUp,
-        ]);
-      }
+    if (!DeviceUtils.isMobile) return;
+    // 大屏 Android 恒为横屏：只切播放器内的 UI 布局态，不动系统方向，
+    // 否则来回切换会把 App 基准方向改掉。
+    if (_landscapeBaseline) return;
+    if (next) {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      await _restoreBaselineOrientation();
     }
   }
 
@@ -163,12 +184,7 @@ extension PlayerWindow on PlayerController {
     isLocked.value = false;
     if (DeviceUtils.isMobile) {
       isLandscape.value = false;
-      try {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        await SystemChrome.setPreferredOrientations(const [
-          DeviceOrientation.portraitUp,
-        ]);
-      } catch (_) {}
+      await _restoreBaselineOrientation();
     }
   }
 

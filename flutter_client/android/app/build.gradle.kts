@@ -8,6 +8,18 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 同一套代码，两种构建变体：
+//  - regular：普通手机版 → portrait（竖屏）。
+//  - hd     ：大屏版，用于 Pico VR 一体机 / Pad 等高分设备 → landscape（横屏），
+//             使 Pico 分配 1600x900 大屏。运行时排版由 DeviceUtils.isLargeScreenAndroid 决定。
+//
+// 屏幕方向由 flavor 专属源集 Manifest 覆盖注入（AGP 标准能力，实测有效）：
+//   src/hd/AndroidManifest.xml      -> android:screenOrientation="landscape"
+//   src/regular/AndroidManifest.xml -> android:screenOrientation="portrait"
+// 主 Manifest（src/main）不声明该属性。
+// 构建：BUILD_NUMBER=<code> ./build_flavor.sh hd|regular；签名：./sign_flavor.sh hd|regular。
+// 验证时务必用正确的枚举表：0=landscape、1=portrait（枚举从 -1=unspecified 开始）。
+
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
@@ -33,6 +45,16 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    flavorDimensions += "mode"
+    productFlavors {
+        create("regular") {
+            dimension = "mode"
+        }
+        create("hd") {
+            dimension = "mode"
+        }
     }
 
     defaultConfig {

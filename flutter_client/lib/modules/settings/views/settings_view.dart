@@ -18,6 +18,7 @@ import '../../../utils/update_check_helper.dart';
 import '../../../utils/legal_document_opener.dart';
 import '../../home/service/appearance_api_service.dart';
 import '../../auth/service/server_storage_service.dart';
+import '../../video_player/playback/external_player.dart';
 
 class SettingsView extends StatefulWidget {
   const SettingsView({super.key});
@@ -48,6 +49,7 @@ class _SettingsViewState extends State<SettingsView> {
   String? _appVersion;
   bool _hasUpdate = false;
   String? _updateOpenUrl;
+  VideoPlayerMode _playerMode = VideoPlayerMode.inApp;
 
   @override
   void initState() {
@@ -61,6 +63,20 @@ class _SettingsViewState extends State<SettingsView> {
       _loadCacheSize();
     }
     _loadAppVersion();
+    _loadPlayerMode();
+  }
+
+  Future<void> _loadPlayerMode() async {
+    if (!ExternalPlayer.supported) return;
+    final mode = await ExternalPlayer.loadMode();
+    if (!mounted) return;
+    setState(() => _playerMode = mode);
+  }
+
+  Future<void> _setPlayerMode(VideoPlayerMode mode) async {
+    await ExternalPlayer.saveMode(mode);
+    if (!mounted) return;
+    setState(() => _playerMode = mode);
   }
 
   Future<void> _loadAppVersion() async {
@@ -329,6 +345,16 @@ class _SettingsViewState extends State<SettingsView> {
                     Icons.language_outlined,
                     () => _showLanguageDialog(context, languageService),
                   ),
+                  if (ExternalPlayer.supported) ...[
+                    const CustomDivider(),
+                    _buildSettingsItem(
+                      context,
+                      'settings_player_mode'.tr,
+                      _playerModeLabel(_playerMode),
+                      _playerModeIcon(_playerMode),
+                      _showPlayerModeDialog,
+                    ),
+                  ],
                   const CustomDivider(),
                   _buildSettingsItem(
                     context,
@@ -697,6 +723,60 @@ class _SettingsViewState extends State<SettingsView> {
       },
     );
   }
+
+  void _showPlayerModeDialog() {
+    () async {
+      final hasVrPlayer = await ExternalPlayer.hasVrPlayer();
+      if (!mounted) return;
+      final options = <VideoPlayerMode>[
+        VideoPlayerMode.inApp,
+        if (hasVrPlayer) VideoPlayerMode.vrPlayer,
+        VideoPlayerMode.systemChooser,
+      ];
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text('settings_player_mode'.tr),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('settings_player_mode_desc'.tr),
+                ),
+                const SizedBox(height: 8),
+                for (final mode in options)
+                  ListTile(
+                    leading: Icon(_playerModeIcon(mode)),
+                    title: Text(_playerModeLabel(mode)),
+                    trailing: _playerMode == mode
+                        ? const Icon(Icons.check_outlined)
+                        : null,
+                    onTap: () async {
+                      await _setPlayerMode(mode);
+                      Get.back();
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    }();
+  }
+
+  String _playerModeLabel(VideoPlayerMode mode) => switch (mode) {
+    VideoPlayerMode.inApp => 'settings_player_mode_in_app'.tr,
+    VideoPlayerMode.vrPlayer => 'settings_player_mode_pico'.tr,
+    VideoPlayerMode.systemChooser => 'settings_player_mode_system'.tr,
+  };
+
+  IconData _playerModeIcon(VideoPlayerMode mode) => switch (mode) {
+    VideoPlayerMode.inApp => Icons.play_circle_outline,
+    VideoPlayerMode.vrPlayer => Icons.smart_display_outlined,
+    VideoPlayerMode.systemChooser => Icons.open_in_new_outlined,
+  };
 
   void _showLanguageDialog(
     BuildContext context,

@@ -35,7 +35,6 @@
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
-            android:screenOrientation="portrait"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
@@ -64,6 +63,10 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- ExternalPlayerMethodHandler queries these packages before direct launch. -->
+        <package android:name="com.picovr.wing.videoplayer"/>
+        <package android:name="com.picovr.videoplayer"/>
+        <package android:name="com.pvr.videoplayer"/>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  regular 变体（普通手机版）专属 Manifest 覆盖。
+  手机竖屏使用，Manifest 声明 portrait。
+  大屏版（Pico / Pad，横屏）见 src/hd/AndroidManifest.xml。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.nascabos.mobile.MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait" />
+    </application>
+</manifest>
