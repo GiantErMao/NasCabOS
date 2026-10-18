@@ -407,6 +407,7 @@ class EnUs extends Translations {
           'Are you sure you want to delete this item? Path: @path',
       'video_delete_with_scrape_files':
           'Also delete the related NFO/posters/fanart',
+      'video_delete_movie_part_hint': 'This is one of @count movie parts. The other @rest parts will remain in your library.',
       'user_delete_confirm_message':
           'Are you sure you want to delete this user?',
 
@@ -1894,6 +1895,10 @@ class EnUs extends Translations {
       'video_detail_storyline': 'Storyline',
       'video_detail_storyline_empty': 'No storyline',
       'video_detail_seasons': 'Seasons',
+      'video_detail_movie_parts': 'Movie parts · @count',
+      'video_detail_movie_parts_duration': 'Movie parts · @count · @minutes min',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes min',
       'video_detail_season_list_title': 'Seasons (@count)',
       'video_detail_episodes': 'Episodes',
       'video_detail_episode_no': 'Ep @num',

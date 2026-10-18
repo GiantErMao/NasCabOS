@@ -401,6 +401,7 @@ class RuRu extends Translations {
       'video_delete_confirm_path': 'Удалить этот элемент? Путь: @path',
       'video_delete_with_scrape_files':
           'Также удалить связанные NFO/постеры/фанарты',
+      'video_delete_movie_part_hint': 'Это одна из @count частей фильма. Остальные @rest частей останутся в медиатеке.',
       'user_delete_confirm_message': 'Удалить этого пользователя?',
       'photo_ai_settings_title': 'AI',
       'photo_ai_progress_suffix': '(Прогресс: @percent%)',
@@ -1851,6 +1852,10 @@ class RuRu extends Translations {
       'video_detail_storyline': 'Сюжет',
       'video_detail_storyline_empty': 'Нет сюжета',
       'video_detail_seasons': 'Сезоны',
+      'video_detail_movie_parts': 'Части фильма · @count',
+      'video_detail_movie_parts_duration': 'Части фильма · @count · @minutes мин',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes мин',
       'video_detail_season_list_title': 'Сезоны (@count)',
       'video_detail_episodes': 'Эпизоды',
       'video_detail_episode_no': 'Эпизод @num',

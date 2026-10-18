@@ -68,6 +68,25 @@ async function _fillFirstFilePathForFolderRows({ knex, rows }) {
   );
 }
 
+async function _movieGroupIds(knex, ids, representativeOnly) {
+  const rows = await knex('video_index').whereIn('id', ids)
+    .select('id', 'path', 'media_type', 'movie_group_key').catch(() => []);
+  const result = new Set(ids);
+  for (const row of rows) {
+    if (row.media_type !== 'movie' || !row.movie_group_key) continue;
+    const parts = await knex('video_index')
+      .where({ path: row.path, media_type: 'movie', movie_group_key: row.movie_group_key })
+      .orderBy('movie_part_no', 'asc').orderBy('id', 'asc').select('id');
+    if (representativeOnly) {
+      result.delete(row.id);
+      if (parts[0]) result.add(parts[0].id);
+    } else {
+      for (const part of parts) result.add(part.id);
+    }
+  }
+  return [...result];
+}
+
 class VideoAlbumService {
   _uid(user) {
     return user && user.id;
@@ -383,7 +402,7 @@ class VideoAlbumService {
         if (ok) allowedIndexIds.add(Number(r.id));
       }
 
-      const allowList = [...allowedIndexIds];
+      const allowList = await _movieGroupIds(trx, [...allowedIndexIds], true);
       if (allowList.length === 0) {
         const err = new Error('auth.PERMISSION_DENIED');
         err.statusCode = 403;
@@ -433,7 +452,8 @@ class VideoAlbumService {
     if (uniqIds.length === 0) throw new Error('common.PARAM_ERROR');
 
     return knexVideo.transaction(async trx => {
-      const affected = await trx('video_album_index').where({ album_id: albumId }).whereIn('index_id', uniqIds).delete();
+      const groupIds = await _movieGroupIds(trx, uniqIds, false);
+      const affected = await trx('video_album_index').where({ album_id: albumId }).whereIn('index_id', groupIds).delete();
 
       const cover = await trx('video_album_index').where({ album_id: albumId, is_cover: 1 }).first();
       if (!cover) {

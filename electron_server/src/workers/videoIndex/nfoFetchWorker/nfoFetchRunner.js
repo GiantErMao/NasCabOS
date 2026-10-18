@@ -20,6 +20,7 @@ const { MetadataTranslateClient, normalizeTranslateApiUrl, normalizeTranslateTar
 const { buildMovieNfo, buildTvShowNfo, buildSeasonNfo, buildEpisodeNfo, writeTextIfChanged } = require('./jellyfinNfo');
 const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('./metatubeFilenameTags');
 const videoIndexIndexUtil = require('../videoIndexIndexUtil');
+const { parseMoviePart, whereMovieRepresentative } = require('../movieParts');
 const { readAndParseNfo, hasValidNfo } = require('../nfoParser');
 const { parseSeasonNumberFromName, parseEpisodeFromName, normalizeNameForNfoGuess } = require('../videoIndexUtil');
 const tmdbUtil = require('./tmdbUtil');
@@ -39,7 +40,8 @@ function _cleanSearchText(text) {
 }
 
 function _normalizeSearchTitleFromFileName(filename) {
-  const base = path.parse(String(filename || '')).name;
+  const part = parseMoviePart(filename);
+  const base = part ? part.titleStem : path.parse(String(filename || '')).name;
   const norm = normalizeNameForNfoGuess(base);
   return norm || base;
 }
@@ -524,20 +526,31 @@ async function _updateIndexFromNfoAndArtwork({ knex, row, baseDir, searchDir, nf
   const artwork = await videoIndexIndexUtil.resolveArtworkPaths({ baseDir, searchDir, current, videoBaseName, onlyVideoBase, seasonNumber });
 
   const patch = { ...nfoFields, ...artwork, view_time: new Date() };
+  const part = r.media_type === 'movie' ? parseMoviePart(r.filename) : null;
+  const groupRows = part
+    ? await knex('video_index').where({ path: r.path, media_type: 'movie', movie_group_key: part.key }).select('id').catch(() => [])
+    : [];
+  const indexIds = groupRows.length > 0 ? groupRows.map(item => item.id) : [r.id];
+  // 写库失败不能让整个刮削批次中断，但要留下痕迹，否则 9 个调用点的
+  // 元数据更新失败会完全不可见（这里原本是静默的 .catch）。
   await knex('video_index')
-    .where({ id: r.id })
+    .whereIn('id', indexIds)
     .update(patch)
-    .catch(() => {});
+    .catch(error => {
+      Logger.error(`[nfo] 更新 video_index 元数据失败 ids=${indexIds.join(',')}`, error);
+    });
 
   const hasKeyFields = nfoFields && (Object.prototype.hasOwnProperty.call(nfoFields, 'nfo_regions') || Object.prototype.hasOwnProperty.call(nfoFields, 'nfo_genres'));
   if (hasKeyFields) {
-    await videoIndexIndexUtil.syncVideoIndex2KeyFromNfoFields({
-      knex,
-      indexId: r.id,
-      mediaType: r.media_type,
-      nfoRegions: nfoFields.nfo_regions,
-      nfoGenres: nfoFields.nfo_genres,
-    });
+    for (const indexId of indexIds) {
+      await videoIndexIndexUtil.syncVideoIndex2KeyFromNfoFields({
+        knex,
+        indexId,
+        mediaType: r.media_type,
+        nfoRegions: nfoFields.nfo_regions,
+        nfoGenres: nfoFields.nfo_genres,
+      });
+    }
   }
   return true;
 }
@@ -658,6 +671,7 @@ class NfoFetchRunner {
       .select('id', 'path', 'filename', 'media_type', 'is_file', 'nfo_name', 'nfo_get_state', 'duration')
       .where({ nfo_get_state: 0 })
       .whereIn('media_type', ['tv', 'movie', 'bdmv', 'video_ts'])
+      .modify(qb => whereMovieRepresentative(qb, 'video_index'))
       .andWhere(qb => {
         qb.where(inner => {
           for (const root of enabledRoots) {
@@ -1383,11 +1397,18 @@ class NfoFetchRunner {
   async scrapeByIndexId({ indexId, tmdbId = 0, scrapeId = '' } = {}) {
     const id = Number(indexId || 0) || 0;
     if (!id) return { ok: false };
-    const row = await this.knexVideo('video_index')
+    let row = await this.knexVideo('video_index')
       .where({ id })
-      .first('id', 'path', 'filename', 'media_type', 'is_file', 'nfo_name', 'nfo_get_state', 'duration')
+      .first('id', 'path', 'filename', 'media_type', 'is_file', 'nfo_name', 'nfo_get_state', 'duration', 'movie_group_key', 'movie_part_no')
       .catch(() => null);
     if (!row) return { ok: false };
+
+    if (row.media_type === 'movie' && row.movie_group_key) {
+      row = await this.knexVideo('video_index')
+        .where({ path: row.path, media_type: 'movie', movie_group_key: row.movie_group_key })
+        .orderBy('movie_part_no', 'asc').orderBy('id', 'asc').first()
+        .catch(() => row);
+    }
 
     const mediaType = row.media_type ? String(row.media_type).trim() : '';
     const overrideRaw = String(scrapeId || tmdbId || '').trim();

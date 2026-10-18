@@ -416,6 +416,7 @@ class DeDe extends Translations {
           'Möchten Sie dieses Element wirklich löschen? Pfad: @path',
       'video_delete_with_scrape_files':
           'Zugehörige NFO/Poster/Fanart ebenfalls löschen',
+      'video_delete_movie_part_hint': 'Dies ist eines von @count Filmteilen. Die übrigen @rest Teile bleiben in der Mediathek.',
       'user_delete_confirm_message':
           'Möchten Sie diesen Benutzer wirklich löschen?',
 
@@ -1891,6 +1892,10 @@ class DeDe extends Translations {
       'video_detail_storyline': 'Handlung',
       'video_detail_storyline_empty': 'Keine Handlung',
       'video_detail_seasons': 'Staffeln',
+      'video_detail_movie_parts': 'Filmteile · @count',
+      'video_detail_movie_parts_duration': 'Filmteile · @count · @minutes Min.',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes Min.',
       'video_detail_season_list_title': 'Staffeln (@count)',
       'video_detail_episodes': 'Episoden',
       'video_detail_episode_no': 'Ep @num',

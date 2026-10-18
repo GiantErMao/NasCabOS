@@ -396,6 +396,7 @@ class ArAr extends Translations {
           'هل أنت متأكد أنك تريد حذف هذا العنصر؟ المسار: @path',
       'video_delete_with_scrape_files':
           'حذف أيضًا ملفات NFO/الملصقات/fanart ذات الصلة',
+      'video_delete_movie_part_hint': 'هذا جزء من @count أجزاء الفيلم. الأجزاء المتبقية (@rest) ستبقى في المكتبة.',
       'user_delete_confirm_message': 'هل أنت متأكد أنك تريد حذف هذا المستخدم؟',
       'photo_ai_settings_title': 'الذكاء الاصطناعي',
       'photo_ai_progress_suffix': '(التقدم: @percent%)',
@@ -1815,6 +1816,10 @@ class ArAr extends Translations {
       'video_detail_storyline': 'قصة',
       'video_detail_storyline_empty': 'لا توجد قصة',
       'video_detail_seasons': 'مواسم',
+      'video_detail_movie_parts': 'أجزاء الفيلم · @count',
+      'video_detail_movie_parts_duration': 'أجزاء الفيلم · @count · @minutes دقيقة',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes دقيقة',
       'video_detail_season_list_title': 'مواسم (@count)',
       'video_detail_episodes': 'حلقات',
       'video_detail_episode_no': 'حلقة @num',

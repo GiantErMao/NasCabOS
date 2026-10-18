@@ -6,6 +6,7 @@ const FileUtil = require('../../utils/fileUtil');
 const VideoFfprobeUtil = require('../../utils/videoFfprobeUtil');
 const { readAndParseNfo } = require('./nfoParser');
 const { getFirstLetter, isSeasonFolderName, parseEpisodeFromName, parseSeasonNumberFromName, normalizeNameForNfoGuess, isSeasonFolderOfShow } = require('./videoIndexUtil');
+const { parseMoviePart } = require('./movieParts');
 
 function _isImageExt(ext) {
   const e = String(ext || '').toLowerCase();
@@ -398,7 +399,21 @@ async function findAndParseNfoForVideo(fullPath) {
   const dir = path.dirname(resolved);
   const base = path.parse(resolved).name;
   const dirBase = path.basename(dir);
-  const candidates = [path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${dirBase}.nfo`), path.join(dir, 'tvshow.nfo')];
+  const part = parseMoviePart(path.basename(resolved));
+  let firstPartNfo = '';
+  if (part) {
+    try {
+      const firstPart = fs.readdirSync(dir).find(name => {
+        if (path.extname(name).toLowerCase() !== '.nfo') return false;
+        const candidate = parseMoviePart(name);
+        return candidate && candidate.key === part.key && candidate.number === 1;
+      });
+      if (firstPart) firstPartNfo = path.join(dir, firstPart);
+    } catch (_) {}
+  }
+  const candidates = part
+    ? [path.join(dir, `${part.titleStem}.nfo`), firstPartNfo, path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${dirBase}.nfo`)].filter(Boolean)
+    : [path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${dirBase}.nfo`), path.join(dir, 'tvshow.nfo')];
   for (const p of candidates) {
     try {
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
@@ -1039,7 +1054,8 @@ async function indexMovieFile({ knex, fullPath, dirPath, filename, ext }) {
   const nfoFields = _nfoFieldsFromParsed(parsed) || {};
 
   const baseName = path.parse(filename).name;
-  const fallbackName = normalizeNameForNfoGuess(baseName) || baseName;
+  const moviePart = parseMoviePart(filename);
+  const fallbackName = normalizeNameForNfoGuess(moviePart ? moviePart.titleStem : baseName) || (moviePart ? moviePart.titleStem : baseName);
   const nfoName = nfoFields.nfo_name || fallbackName || baseName;
 
   const base = {
@@ -1050,6 +1066,8 @@ async function indexMovieFile({ knex, fullPath, dirPath, filename, ext }) {
     is_file: 1,
     file_hash: fileHash || '',
     media_type: 'movie',
+    movie_group_key: moviePart ? moviePart.key : '',
+    movie_part_no: moviePart ? moviePart.number : 0,
     season_count: 0,
     episod_count: 0,
     episod_num: 0,

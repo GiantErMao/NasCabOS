@@ -408,6 +408,7 @@ class ViVn extends Translations {
       'video_delete_confirm_path': 'Xác nhận xóa, đường dẫn @path',
       'video_delete_with_scrape_files':
           'Đồng thời xóa nfo, áp phích, ảnh ngang của tệp',
+      'video_delete_movie_part_hint': 'Đây là một trong @count phần của phim. Các phần còn lại (@rest) sẽ vẫn ở trong thư viện.',
       'user_delete_confirm_message': 'Xác nhận xóa người dùng [@username]?',
       'close_all': 'Đóng tất cả',
       'put_in_recycle_bin': 'Cho vào thùng rác hệ thống',
@@ -1883,6 +1884,10 @@ class ViVn extends Translations {
       'video_detail_storyline': 'Giới thiệu cốt truyện',
       'video_detail_storyline_empty': 'Không có giới thiệu',
       'video_detail_seasons': 'Mùa',
+      'video_detail_movie_parts': 'Phần phim · @count',
+      'video_detail_movie_parts_duration': 'Phần phim · @count · @minutes phút',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes phút',
       'video_detail_season_list_title': 'Danh sách mùa (tổng @count)',
       'video_detail_episodes': 'Danh sách tập',
       'video_detail_episode_no': 'Tập @num',

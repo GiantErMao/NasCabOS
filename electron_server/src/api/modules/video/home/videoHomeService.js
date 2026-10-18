@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const VideoSourceService = require('../source/videoSourceService');
+const { whereMovieRepresentative } = require('../../../../workers/videoIndex/movieParts');
 
 function _resolveArtworkAbsolute({ baseDir, maybeRelative }) {
   const p = maybeRelative === undefined || maybeRelative === null ? '' : String(maybeRelative).trim();
@@ -236,6 +237,7 @@ class VideoHomeService {
   async _getRecommend({ limit, validPaths }) {
     const baseQuery = this.knex('video_index as v')
       .whereIn('v.media_type', ['movie', 'tv', 'bdmv', 'video_ts'])
+      .modify(qb => whereMovieRepresentative(qb, 'v'))
       .andWhere('v.nfo_get_state', 1)
       .modify(qb => {
         if (!validPaths || validPaths.length === 0) {
@@ -314,6 +316,8 @@ class VideoHomeService {
         'v.media_type',
         'v.path',
         'v.filename',
+        'v.movie_group_key',
+        'v.movie_part_no',
         'v.nfo_name',
         'v.nfo_number',
         'v.nfo_source',
@@ -331,6 +335,37 @@ class VideoHomeService {
         'v.duration'
       )
       .catch(() => []);
+
+    // Collapse CD1/CD2 parts of one movie onto the representative (lowest part
+    // number) row, so a split movie shows up as a single card. Progress and
+    // watch time still come from whichever part was played last.
+    const movieGroups = [
+      ...new Map(
+        (prefRows || [])
+          .filter(r => r.media_type === 'movie' && r.movie_group_key)
+          .map(r => [`${r.path}\0${r.movie_group_key}`, { path: r.path, key: r.movie_group_key }])
+      ).values(),
+    ];
+    const movieRepresentatives = new Map();
+    if (movieGroups.length > 0) {
+      const movieRows = await this.knex('video_index as v')
+        .where({ 'v.media_type': 'movie', 'v.is_file': 1 })
+        .andWhere(builder => {
+          for (const group of movieGroups) {
+            builder.orWhere(function () {
+              this.where('v.path', group.path).andWhere('v.movie_group_key', group.key);
+            });
+          }
+        })
+        .orderBy('v.movie_part_no', 'asc')
+        .orderBy('v.id', 'asc')
+        .select('v.*')
+        .catch(() => []);
+      for (const movie of movieRows || []) {
+        const key = `${movie.path}\0${movie.movie_group_key}`;
+        if (!movieRepresentatives.has(key)) movieRepresentatives.set(key, movie);
+      }
+    }
 
     const episodeFolders = new Set();
     for (const r of prefRows || []) {
@@ -473,6 +508,8 @@ class VideoHomeService {
         const k2 = showParent && showName ? `${showParent}||${showName}` : '';
 
         item = (k1 && seasonMap.has(k1) ? seasonMap.get(k1) : null) || (k1 && tvMap.has(k1) ? tvMap.get(k1) : null) || (k2 && tvMap.has(k2) ? tvMap.get(k2) : null);
+      } else if (mt === 'movie' && r.movie_group_key) {
+        item = movieRepresentatives.get(`${r.path}\0${r.movie_group_key}`) || r;
       } else if (mt !== 'movie' && mt !== 'tv' && mt !== 'season' && mt !== 'bdmv' && mt !== 'video_ts') {
         item = null;
       }
@@ -495,6 +532,7 @@ class VideoHomeService {
 
   async _getRecentAdd({ limit, validPaths, mediaType }) {
     const rows = await this.knex('video_index as v')
+      .modify(qb => whereMovieRepresentative(qb, 'v'))
       .modify(qb => {
         if (mediaType === 'movie') qb.whereIn('v.media_type', ['movie', 'bdmv', 'video_ts']);
         else qb.where('v.media_type', mediaType);

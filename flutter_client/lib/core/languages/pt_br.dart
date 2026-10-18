@@ -412,6 +412,7 @@ class PtBr extends Translations {
           'Tem certeza de que deseja excluir este item? Caminho: @path',
       'video_delete_with_scrape_files':
           'Excluir também os arquivos NFO/pôsteres/fanart relacionados',
+      'video_delete_movie_part_hint': 'Esta é uma de @count partes do filme. As outras @rest partes permanecerão na biblioteca.',
       'user_delete_confirm_message':
           'Tem certeza de que deseja excluir o usuário [@username]?',
 
@@ -1896,6 +1897,10 @@ class PtBr extends Translations {
       'video_detail_storyline': 'Enredo',
       'video_detail_storyline_empty': 'Sem enredo',
       'video_detail_seasons': 'Temporadas',
+      'video_detail_movie_parts': 'Partes do filme · @count',
+      'video_detail_movie_parts_duration': 'Partes do filme · @count · @minutes min',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes min',
       'video_detail_season_list_title': 'Temporadas (@count)',
       'video_detail_episodes': 'Episódios',
       'video_detail_episode_no': 'Ep @num',

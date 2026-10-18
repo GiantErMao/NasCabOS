@@ -1,5 +1,6 @@
 const path = require('path');
 const userUtil = require('../../../../utils/userUtil');
+const { whereMovieRepresentative } = require('../../../../workers/videoIndex/movieParts');
 
 function _parsePathList(pathListText) {
   if (!pathListText) return [];
@@ -147,6 +148,7 @@ class VideoCollectionService {
     const prefixes = Array.isArray(pathList) ? pathList.filter(Boolean) : [];
     if (prefixes.length === 0) return [];
     const rows = await knexVideo('video_index as v')
+      .modify(qb => whereMovieRepresentative(qb, 'v'))
       .modify(qb => {
         qb.andWhere(builder => {
           const sep = path.sep;

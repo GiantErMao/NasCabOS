@@ -18,7 +18,8 @@ class VideoDetailController extends GetxController {
   final RxInt episodePage = 1.obs;
   final int episodePageSize = 20;
   final RxBool discContentLoading = false.obs;
-  final RxList<Map<String, dynamic>> discContents = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> discContents =
+      <Map<String, dynamic>>[].obs;
 
   late final int indexId;
 
@@ -217,16 +218,51 @@ class VideoDetailController extends GetxController {
   List<Map<String, dynamic>> get discContentList =>
       discContents.toList(growable: false);
 
+  List<Map<String, dynamic>> get movieParts {
+    final rawParts = item?['movie_parts'];
+    final list = rawParts is List ? rawParts : const [];
+    return list
+        .whereType<Map>()
+        .map((part) => part.cast<String, dynamic>())
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> buildMoviePartPlaylist() => movieParts
+      .map(
+        (part) => <String, dynamic>{
+          'path': part['path']?.toString() ?? '',
+          'name': 'CD${part['number'] ?? ''}',
+        },
+      )
+      .where((part) => (part['path']?.toString() ?? '').isNotEmpty)
+      .toList(growable: false);
+
+  int get movieContinueIndex {
+    final number = (history?['movie_part_no'] as num?)?.toInt() ?? 0;
+    final index = movieParts.indexWhere(
+      (part) => (part['number'] as num?)?.toInt() == number,
+    );
+    return index < 0 ? 0 : index;
+  }
+
   List<Map<String, dynamic>> buildDiscPlaybackPlaylist() {
     return discContentList
         .map((item) {
           final rawPlaylist = item['playlist'];
-          final first = rawPlaylist is List && rawPlaylist.isNotEmpty && rawPlaylist.first is Map
+          final first =
+              rawPlaylist is List &&
+                  rawPlaylist.isNotEmpty &&
+                  rawPlaylist.first is Map
               ? (rawPlaylist.first as Map).cast<String, dynamic>()
               : const <String, dynamic>{};
-          final path = (item['path']?.toString() ?? first['path']?.toString() ?? '').trim();
+          final path =
+              (item['path']?.toString() ?? first['path']?.toString() ?? '')
+                  .trim();
           final internalPath =
-              (item['internal_path']?.toString() ?? first['internal_path']?.toString() ?? '').trim();
+              (item['internal_path']?.toString() ??
+                      first['internal_path']?.toString() ??
+                      '')
+                  .trim();
           return <String, dynamic>{
             'path': path,
             'internalPath': internalPath,
@@ -247,12 +283,17 @@ class VideoDetailController extends GetxController {
     final list = discContentList;
     final index = list.indexWhere((item) {
       final rawPlaylist = item['playlist'];
-      final first = rawPlaylist is List && rawPlaylist.isNotEmpty && rawPlaylist.first is Map
+      final first =
+          rawPlaylist is List &&
+              rawPlaylist.isNotEmpty &&
+              rawPlaylist.first is Map
           ? (rawPlaylist.first as Map).cast<String, dynamic>()
           : const <String, dynamic>{};
       final path = item['path']?.toString() ?? first['path']?.toString() ?? '';
       final internalPath =
-          item['internal_path']?.toString().trim() ?? first['internal_path']?.toString().trim() ?? '';
+          item['internal_path']?.toString().trim() ??
+          first['internal_path']?.toString().trim() ??
+          '';
       return path == currentPath && internalPath == currentInternalPath;
     });
     return index < 0 ? 0 : index;

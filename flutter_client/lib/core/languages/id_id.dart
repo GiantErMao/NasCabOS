@@ -409,6 +409,7 @@ class IdId extends Translations {
       'video_delete_confirm_path': 'Konfirmasi untuk menghapus, jalur@path',
       'video_delete_with_scrape_files':
           'Hapus juga file nfo, poster, dan fanart yang terkait',
+      'video_delete_movie_part_hint': 'Ini adalah salah satu dari @count bagian film. @rest bagian lainnya akan tetap ada di pustaka.',
       'user_delete_confirm_message':
           'Yakin ingin menghapus pengguna [@username]?',
       'close_all': 'Tutup Semua',
@@ -1907,6 +1908,10 @@ class IdId extends Translations {
       'video_detail_storyline': 'Sinopsis',
       'video_detail_storyline_empty': 'Tidak Ada Sinopsis',
       'video_detail_seasons': 'Musim',
+      'video_detail_movie_parts': 'Bagian film · @count',
+      'video_detail_movie_parts_duration': 'Bagian film · @count · @minutes menit',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes menit',
       'video_detail_season_list_title': 'Daftar Musim (Total @count)',
       'video_detail_episodes': 'Daftar Episode',
       'video_detail_episode_no': 'Episode @num',

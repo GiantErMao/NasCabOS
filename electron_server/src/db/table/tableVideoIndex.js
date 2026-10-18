@@ -1,6 +1,7 @@
 const knexUtil = require('../knexUtil');
 const dbUtil = require('../dbUtil');
 const Logger = require('../../utils/logger');
+const { parseMoviePart } = require('../../workers/videoIndex/movieParts');
 
 function _normalizeNfoNumberCandidate(value) {
   const raw = String(value || '').trim();
@@ -61,6 +62,8 @@ class tableVideoIndex {
         table.integer('is_file').notNullable().defaultTo(1);
         table.string('file_hash').defaultTo('');
         table.string('play_rel_path').defaultTo('');
+        table.string('movie_group_key').notNullable().defaultTo('');
+        table.integer('movie_part_no').notNullable().defaultTo(0);
         table.string('nfo_name').defaultTo('');
         table.string('nfo_name_fl').defaultTo('');
         table.string('nfo_number').defaultTo('');
@@ -109,6 +112,16 @@ class tableVideoIndex {
         Logger.info(`✅ Added ${name} column to table ${this.tableName}`);
       };
       await addColumn('play_rel_path', "TEXT DEFAULT ''");
+      const needsMoviePartBackfill = !colNames.has('movie_group_key') || !colNames.has('movie_part_no');
+      await addColumn('movie_group_key', "TEXT NOT NULL DEFAULT ''");
+      await addColumn('movie_part_no', 'INTEGER NOT NULL DEFAULT 0');
+      if (needsMoviePartBackfill) {
+        const movies = await knex(this.tableName).where({ media_type: 'movie', is_file: 1 }).select('id', 'filename');
+        for (const movie of movies) {
+          const part = parseMoviePart(movie.filename);
+          if (part) await knex(this.tableName).where({ id: movie.id }).update({ movie_group_key: part.key, movie_part_no: part.number });
+        }
+      }
       await addColumn('nfo_number', "TEXT DEFAULT ''");
       if (!colNames.has('nfo_source')) {
         await knex.transaction(async trx => {
@@ -189,6 +202,7 @@ class tableVideoIndex {
       { columns: ['path', 'filename', 'media_type', 'nfo_director'], name: 'idx_video_index_path_filename_media_type_nfo_director', unique: false },
       { columns: ['path', 'filename', 'media_type', 'nfo_actor'], name: 'idx_video_index_path_filename_media_type_nfo_actor', unique: false },
       { columns: ['nfo_number'], name: 'idx_video_index_nfo_number', unique: false },
+      { columns: ['path', 'movie_group_key', 'movie_part_no'], name: 'idx_video_index_movie_parts', unique: false },
     ];
 
     for (const index of targetIndexes) {

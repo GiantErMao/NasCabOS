@@ -5,6 +5,7 @@ const userUtil = require('../../../../utils/userUtil');
 const { intersectPaths, parsePathListText } = require('../../photo/timeline/photoPathQueryUtil');
 const smartAlbumFilterUtil = require('../smartAlbum/videoSmartAlbumFilterUtil');
 const { selectNaturalPageIdsFromQuery, sortRowsByPageIds } = require('../../../../utils/naturalSortUtil');
+const { whereMovieRepresentative, indexIdsForMovieGroups } = require('../../../../workers/videoIndex/movieParts');
 
 function _extractMovieCodeFromFilename(filename) {
   const base = path.parse(String(filename || '')).name;
@@ -344,10 +345,14 @@ class VideoListService {
 
     const rows = await knex('video_index as v')
       .whereIn('v.media_type', ['movie', 'tv', 'bdmv', 'video_ts'])
+      .modify(qb => whereMovieRepresentative(qb))
       .modify(qb => {
         if (!Number.isFinite(albumId) || albumId <= 0) return;
-        qb.join('video_album_index as ai', function () {
-          this.on('ai.index_id', '=', 'v.id').andOn('ai.album_id', '=', knex.raw('?', [albumId]));
+        qb.whereExists(function () {
+          this.select(1).from('video_album_index as ai')
+            .leftJoin('video_index as album_movie', 'album_movie.id', 'ai.index_id')
+            .where('ai.album_id', albumId)
+            .whereRaw("(ai.index_id = v.id OR (v.media_type = 'movie' AND v.movie_group_key <> '' AND album_movie.media_type = 'movie' AND album_movie.path = v.path AND album_movie.movie_group_key = v.movie_group_key))");
         });
       })
       .modify(qb => _applyVideoIndexPathPrefixFilter(qb, finalPaths))
@@ -446,17 +451,24 @@ class VideoListService {
     const includeSeason = isFavoriteList || (Number.isFinite(albumId) && albumId > 0);
     const baseQuery = knex('video_index as v')
       .whereIn('v.media_type', includeSeason ? ['movie', 'tv', 'season', 'bdmv', 'video_ts'] : ['movie', 'tv', 'bdmv', 'video_ts'])
+      .modify(qb => whereMovieRepresentative(qb))
       .modify(qb => {
         if (isFavoriteList) {
-          qb.join('video_favorite as fav', function () {
-            this.on('fav.index_id', '=', 'v.id').andOn('fav.uid', '=', knex.raw('?', [uid]));
+          qb.whereExists(function () {
+            this.select(1).from('video_favorite as fav')
+              .leftJoin('video_index as favorite_movie', 'favorite_movie.id', 'fav.index_id')
+              .where('fav.uid', uid)
+              .whereRaw("(fav.index_id = v.id OR (v.media_type = 'movie' AND v.movie_group_key <> '' AND favorite_movie.media_type = 'movie' AND favorite_movie.path = v.path AND favorite_movie.movie_group_key = v.movie_group_key))");
           });
         }
       })
       .modify(qb => {
         if (!Number.isFinite(albumId) || albumId <= 0) return;
-        qb.join('video_album_index as ai', function () {
-          this.on('ai.index_id', '=', 'v.id').andOn('ai.album_id', '=', knex.raw('?', [albumId]));
+        qb.whereExists(function () {
+          this.select(1).from('video_album_index as ai')
+            .leftJoin('video_index as album_movie', 'album_movie.id', 'ai.index_id')
+            .where('ai.album_id', albumId)
+            .whereRaw("(ai.index_id = v.id OR (v.media_type = 'movie' AND v.movie_group_key <> '' AND album_movie.media_type = 'movie' AND album_movie.path = v.path AND album_movie.movie_group_key = v.movie_group_key))");
         });
       })
       .modify(qb => {
@@ -553,6 +565,8 @@ class VideoListService {
         'v.media_type',
         'v.path',
         'v.filename',
+        'v.movie_group_key',
+        'v.movie_part_no',
         'v.nfo_name',
         'v.nfo_number',
         'v.nfo_source',
@@ -590,8 +604,7 @@ class VideoListService {
     }
 
     if (sortBy === 'favorite_time' && isFavoriteList) {
-      query.orderBy('fav.create_time', sortOrder);
-      query.orderBy('fav.id', 'desc');
+      query.orderByRaw(`(SELECT MAX(fav.create_time) FROM video_favorite AS fav LEFT JOIN video_index AS favorite_movie ON favorite_movie.id = fav.index_id WHERE fav.uid = ? AND (fav.index_id = v.id OR (v.media_type = 'movie' AND v.movie_group_key <> '' AND favorite_movie.media_type = 'movie' AND favorite_movie.path = v.path AND favorite_movie.movie_group_key = v.movie_group_key))) ${sortOrder}`, [uid]);
     } else if (sortBy === 'view_time') {
       query.orderBy('v.view_time', sortOrder);
     } else if (sortBy === 'year') {
@@ -623,15 +636,18 @@ class VideoListService {
       }
       const ids = items.map(r => Number(r && r.id) || 0).filter(v => v > 0);
       if (ids.length > 0) {
-        const favRows = await knex('video_favorite')
-          .where({ uid })
-          .whereIn('index_id', ids)
-          .select('index_id')
+        const relatedIds = await indexIdsForMovieGroups(knex, items);
+        const favRows = await knex('video_favorite as fav')
+          .join('video_index as fv', 'fv.id', 'fav.index_id')
+          .where('fav.uid', uid)
+          .whereIn('fav.index_id', relatedIds)
+          .select('fav.index_id', 'fv.path', 'fv.media_type', 'fv.movie_group_key')
           .catch(() => []);
         const favSet = new Set((favRows || []).map(r => Number(r && r.index_id) || 0).filter(v => v > 0));
+        const favGroups = new Set((favRows || []).filter(r => r.media_type === 'movie' && r.movie_group_key).map(r => `${r.path}\0${r.movie_group_key}`));
         for (const item of items) {
           const id = Number(item && item.id) || 0;
-          if (item && typeof item === 'object') item.is_favorite = favSet.has(id);
+          if (item && typeof item === 'object') item.is_favorite = favSet.has(id) || (item.media_type === 'movie' && item.movie_group_key && favGroups.has(`${item.path}\0${item.movie_group_key}`));
         }
       }
     }
@@ -675,6 +691,8 @@ class VideoListService {
         'v.media_type',
         'v.path',
         'v.filename',
+        'v.movie_group_key',
+        'v.movie_part_no',
         'v.nfo_name',
         'v.nfo_number',
         'v.nfo_source',
@@ -721,6 +739,28 @@ class VideoListService {
 
     const seasonMap = new Map();
     const tvMap = new Map();
+    const movieGroups = [...new Map((prefRows || [])
+      .filter(r => r.media_type === 'movie' && r.movie_group_key)
+      .map(r => [`${r.path}\0${r.movie_group_key}`, { path: r.path, key: r.movie_group_key }])).values()];
+    const movieRepresentatives = new Map();
+    if (movieGroups.length > 0) {
+      const movieRows = await this.knexVideo('video_index as v')
+        .where({ 'v.media_type': 'movie', 'v.is_file': 1 })
+        .andWhere(builder => {
+          for (const group of movieGroups) {
+            builder.orWhere(function () {
+              this.where('v.path', group.path).andWhere('v.movie_group_key', group.key);
+            });
+          }
+        })
+        .orderBy('v.movie_part_no', 'asc').orderBy('v.id', 'asc')
+        .select('v.*')
+        .catch(() => []);
+      for (const movie of movieRows) {
+        const key = `${movie.path}\0${movie.movie_group_key}`;
+        if (!movieRepresentatives.has(key)) movieRepresentatives.set(key, movie);
+      }
+    }
 
     if (seasonPairs.length > 0) {
       const rows = await this.knexVideo('video_index as v')
@@ -822,6 +862,8 @@ class VideoListService {
         const k2 = showParent && showName ? `${showParent}||${showName}` : '';
 
         item = (k1 && seasonMap.has(k1) ? seasonMap.get(k1) : null) || (k1 && tvMap.has(k1) ? tvMap.get(k1) : null) || (k2 && tvMap.has(k2) ? tvMap.get(k2) : null);
+      } else if (mt === 'movie' && r.movie_group_key) {
+        item = movieRepresentatives.get(`${r.path}\0${r.movie_group_key}`) || r;
       } else if (mt !== 'movie' && mt !== 'tv' && mt !== 'season' && mt !== 'bdmv' && mt !== 'video_ts') {
         item = null;
       }
@@ -831,7 +873,7 @@ class VideoListService {
       if (!id || seen.has(id)) continue;
       seen.add(id);
 
-      const duration = item.duration === undefined || item.duration === null ? 0 : Number(item.duration);
+      const duration = r.duration === undefined || r.duration === null ? 0 : Number(r.duration);
       const playback_position = r.playback_position === undefined || r.playback_position === null ? 0 : Number(r.playback_position);
       let progress = 0;
       if (duration > 0 && playback_position > 0) {

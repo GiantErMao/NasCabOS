@@ -134,7 +134,8 @@ class _AppVideoDetailActionsSectionState
     final filePath = (m['full_path']?.toString() ?? '').trim();
     final basePath = (m['path']?.toString() ?? '').trim();
     final filename = (m['filename']?.toString() ?? '').trim();
-    final isMovieLike = mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
+    final isMovieLike =
+        mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
 
     if (isMovieLike) {
       if (filePath.isNotEmpty) return p.dirname(filePath);
@@ -155,7 +156,8 @@ class _AppVideoDetailActionsSectionState
     final filePath = (m['full_path']?.toString() ?? '').trim();
     final basePath = (m['path']?.toString() ?? '').trim();
     final filename = (m['filename']?.toString() ?? '').trim();
-    final isMovieLike = mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
+    final isMovieLike =
+        mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
 
     if (mediaType == 'bdmv') {
       if (filePath.isNotEmpty) return p.join(filePath, 'BDMV');
@@ -188,7 +190,8 @@ class _AppVideoDetailActionsSectionState
     final filePath = (m['full_path']?.toString() ?? '').trim();
     final basePath = (m['path']?.toString() ?? '').trim();
     final filename = (m['filename']?.toString() ?? '').trim();
-    final isMovieLike = mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
+    final isMovieLike =
+        mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
 
     if (isMovieLike) {
       if (filePath.isNotEmpty) return filePath;
@@ -228,7 +231,8 @@ class _AppVideoDetailActionsSectionState
     final target = _resolveDeletePath(m);
     if (target.isEmpty) return;
 
-    final isMovie = mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
+    final isMovie =
+        mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
     final isShellSupported = ApiController.instance.state.shellSupported;
     var deleteScrapeFiles = true;
     var recycle = isShellSupported;
@@ -244,6 +248,22 @@ class _AppVideoDetailActionsSectionState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('video_delete_confirm_path'.trParams({'path': target})),
+                  if (isMovie && widget.ctrl.movieParts.length > 1) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'video_delete_movie_part_hint'.trParams({
+                        'count': widget.ctrl.movieParts.length.toString(),
+                        'rest': (widget.ctrl.movieParts.length - 1).toString(),
+                      }),
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.color
+                            ?.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
                   if (isMovie) ...[
                     const SizedBox(height: 12),
                     CheckboxListTile(
@@ -297,9 +317,11 @@ class _AppVideoDetailActionsSectionState
     );
     if (ok != true) return;
 
-    final res = await FileApiService.instance.deleteEntries([
-      target,
-    ], deleteScrapeFiles: isMovie && deleteScrapeFiles, recycle: recycle);
+    final res = await FileApiService.instance.deleteEntries(
+      [target],
+      deleteScrapeFiles: isMovie && deleteScrapeFiles,
+      recycle: recycle,
+    );
     if (!res.success) {
       ToastUtil.show('operation_failed'.tr);
       return;
@@ -385,7 +407,8 @@ class _AppVideoDetailActionsSectionState
   }
 
   Future<void> _editOpenSkip(BuildContext context) async {
-    if (!CurrentUserController.instance.isAdmin || !widget.ctrl.canEditOpenSkip) {
+    if (!CurrentUserController.instance.isAdmin ||
+        !widget.ctrl.canEditOpenSkip) {
       return;
     }
     if (widget.ctrl.indexId <= 0) return;
@@ -524,10 +547,16 @@ class _AppVideoDetailActionsSectionState
 
     final isFile = (m['is_file'] as num?)?.toInt() == 1;
     final mediaType = ctrl.mediaType.trim().toLowerCase();
-    final filePath = ((isFile ? m['full_path'] : m['play_file_path'])?.toString() ?? '').trim();
-    final isMovieLike = mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
+    final filePath =
+        ((isFile ? m['full_path'] : m['play_file_path'])?.toString() ?? '')
+            .trim();
+    final isMovieLike =
+        mediaType == 'movie' || mediaType == 'bdmv' || mediaType == 'video_ts';
     final discPlaylist = ctrl.buildDiscPlaybackPlaylist();
-    final hasDiscPlaylist = (mediaType == 'bdmv' || mediaType == 'video_ts') && discPlaylist.isNotEmpty;
+    final moviePartPlaylist = ctrl.buildMoviePartPlaylist();
+    final hasDiscPlaylist =
+        (mediaType == 'bdmv' || mediaType == 'video_ts') &&
+        discPlaylist.isNotEmpty;
     final canPlayTv =
         !isFile &&
         (mediaType == 'tv' || mediaType == 'season') &&
@@ -535,8 +564,7 @@ class _AppVideoDetailActionsSectionState
 
     final hasHistory = ctrl.hasHistory;
     final playText = hasHistory ? 'video_detail_continue_play'.tr : 'play'.tr;
-    final showProgress =
-        hasHistory && (mediaType == 'season' || isMovieLike);
+    final showProgress = hasHistory && (mediaType == 'season' || isMovieLike);
     final watched = ctrl.historySeconds;
     final total = ctrl.historyDurationSeconds;
     final progress = total > 0 ? (watched / total).clamp(0.0, 1.0) : 0.0;
@@ -560,7 +588,9 @@ class _AppVideoDetailActionsSectionState
               backgroundColor: Colors.blue.shade800,
               buttonSize: 42,
               iconSize: 22,
-              onPressed: (isFile || mediaType == 'bdmv' || mediaType == 'video_ts') && filePath.isNotEmpty
+              onPressed:
+                  (isFile || mediaType == 'bdmv' || mediaType == 'video_ts') &&
+                      filePath.isNotEmpty
                   ? () {
                       if (hasDiscPlaylist) {
                         AppRoutes.toVideoPlayer(
@@ -570,12 +600,24 @@ class _AppVideoDetailActionsSectionState
                         );
                         return;
                       }
+                      if (moviePartPlaylist.length > 1) {
+                        AppRoutes.toVideoPlayer(
+                          playlist: moviePartPlaylist,
+                          initialIndex: hasHistory
+                              ? ctrl.movieContinueIndex
+                              : 0,
+                          ignoreFindSub: 0,
+                        );
+                        return;
+                      }
                       AppRoutes.toVideoPlayer(
                         playlist: [
                           {
                             'path': filePath,
                             'name':
-                                (m['nfo_name']?.toString() ?? '').trim().isNotEmpty
+                                (m['nfo_name']?.toString() ?? '')
+                                    .trim()
+                                    .isNotEmpty
                                 ? m['nfo_name']?.toString() ?? ''
                                 : m['filename']?.toString() ?? '',
                           },

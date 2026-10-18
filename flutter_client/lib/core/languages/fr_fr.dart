@@ -417,6 +417,7 @@ class FrFr extends Translations {
           'Voulez-vous vraiment supprimer cet élément ? Chemin : @path',
       'video_delete_with_scrape_files':
           'Supprimer aussi les NFO/affiches/fanart associés',
+      'video_delete_movie_part_hint': 'Ceci est l\'une des @count parties du film. Les @rest autres parties resteront dans la bibliothèque.',
       'user_delete_confirm_message':
           'Voulez-vous vraiment supprimer l\'utilisateur [@username] ?',
 
@@ -1907,6 +1908,10 @@ class FrFr extends Translations {
       'video_detail_storyline': 'Synopsis',
       'video_detail_storyline_empty': 'Aucun synopsis',
       'video_detail_seasons': 'Saisons',
+      'video_detail_movie_parts': 'Parties du film · @count',
+      'video_detail_movie_parts_duration': 'Parties du film · @count · @minutes min',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes min',
       'video_detail_season_list_title': 'Saisons (@count)',
       'video_detail_episodes': 'Épisodes',
       'video_detail_episode_no': 'Ep @num',

@@ -398,6 +398,7 @@ class ThTh extends Translations {
       'video_delete_confirm_path': 'ยืนยันลบหรือไม่ เส้นทาง @path',
       'video_delete_with_scrape_files':
           'ลบไฟล์ nfo โปสเตอร์ ภาพแนวนอนที่เกี่ยวข้องพร้อมกัน',
+      'video_delete_movie_part_hint': 'นี่คือหนึ่งใน @count ส่วนของภาพยนตร์ ส่วนที่เหลืออีก @rest ส่วนจะยังคงอยู่ในคลัง',
       'user_delete_confirm_message': 'ยืนยันลบผู้ใช้ [@username] หรือไม่?',
       'close_all': 'ปิดทั้งหมด',
       'put_in_recycle_bin': 'ย้ายไปถังรีไซเคิลระบบ',
@@ -1823,6 +1824,10 @@ class ThTh extends Translations {
       'video_detail_storyline': 'เรื่องย่อ',
       'video_detail_storyline_empty': 'ยังไม่มีเรื่องย่อ',
       'video_detail_seasons': 'ซีซัน',
+      'video_detail_movie_parts': 'ส่วนภาพยนตร์ · @count ส่วน',
+      'video_detail_movie_parts_duration': 'ส่วนภาพยนตร์ · @count ส่วน · @minutes นาที',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes นาที',
       'video_detail_season_list_title': 'รายการซีซัน (รวม @count)',
       'video_detail_episodes': 'รายการตอน',
       'video_detail_episode_no': 'ตอนที่ @num',

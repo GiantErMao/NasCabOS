@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../controller/video_detail_controller.dart';
 import 'app_video_detail_actions_section.dart';
 import 'video_detail_disc_content_section.dart';
+import 'video_detail_movie_parts_section.dart';
 import 'app_video_detail_top_section.dart';
 import 'video_detail_episode_section.dart';
 import 'video_detail_file_info.dart';
@@ -47,6 +48,10 @@ class AppVideoDetailBody extends StatelessWidget {
                     const SizedBox(height: 12),
                     AppVideoDetailActionsSection(ctrl: ctrl),
                     const SizedBox(height: 14),
+                    if (ctrl.movieParts.length > 1) ...[
+                      VideoDetailMoviePartsSection(ctrl: ctrl),
+                      const SizedBox(height: 14),
+                    ],
                     if (ctrl.seasonList.isNotEmpty) ...[
                       VideoDetailSeasonSection(ctrl: ctrl),
                       const SizedBox(height: 10),

@@ -410,6 +410,7 @@ class EsEs extends Translations {
           '¿Estás seguro de que quieres eliminar este elemento? Ruta: @path',
       'video_delete_with_scrape_files':
           'También eliminar los archivos NFO/pósters/fanart relacionados',
+      'video_delete_movie_part_hint': 'Esta es una de @count partes de la película. Las otras @rest partes seguirán en la biblioteca.',
       'user_delete_confirm_message':
           '¿Estás seguro de que quieres eliminar al usuario [@username]?',
       'photo_ai_settings_title': 'IA',
@@ -1883,6 +1884,10 @@ class EsEs extends Translations {
       'video_detail_storyline': 'Argumento',
       'video_detail_storyline_empty': 'Sin argumento',
       'video_detail_seasons': 'Temporadas',
+      'video_detail_movie_parts': 'Partes de la película · @count',
+      'video_detail_movie_parts_duration': 'Partes de la película · @count · @minutes min',
+      'video_detail_movie_part': 'CD@number',
+      'video_detail_movie_part_duration': 'CD@number · @minutes min',
       'video_detail_season_list_title': 'Temporadas (@count)',
       'video_detail_episodes': 'Episodios',
       'video_detail_episode_no': 'Ep @num',

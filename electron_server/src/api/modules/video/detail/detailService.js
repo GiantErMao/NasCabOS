@@ -9,6 +9,7 @@ const nascabAccountUtil = require('../../service/utils/nascabAccountUtil');
 const fileService = require('../../file/core/fileService');
 const { TmdbClient } = require('../../../../workers/videoIndex/nfoFetchWorker/tmdbClient');
 const { parseSeasonNumberFromName } = require('../../../../workers/videoIndex/videoIndexUtil');
+const { indexIdsForMovieGroups } = require('../../../../workers/videoIndex/movieParts');
 
 function _compareSeasonRows(a, b) {
   const an = parseSeasonNumberFromName(a && a.filename);
@@ -56,6 +57,22 @@ function _normalizeIndexRow(row) {
     play_file_path: playFilePath,
     first_file_path: row && (row.media_type === 'bdmv' || row.media_type === 'video_ts') && playFilePath ? playFilePath : row.first_file_path,
   };
+}
+
+async function _getMovieParts(knex, row) {
+  if (!row || row.media_type !== 'movie' || !row.movie_group_key) return [];
+  const rows = await knex('video_index')
+    .where({ media_type: 'movie', is_file: 1, path: row.path, movie_group_key: row.movie_group_key })
+    .orderBy('movie_part_no', 'asc').orderBy('id', 'asc')
+    .select('id', 'path', 'filename', 'movie_part_no', 'duration')
+    .catch(() => []);
+  return rows.map(part => ({
+    id: part.id,
+    number: part.movie_part_no,
+    filename: part.filename,
+    path: path.join(part.path, part.filename),
+    duration: part.duration,
+  }));
 }
 
 function _buildVideoDisplayName(row) {
@@ -430,6 +447,24 @@ async function _getDetailHistory({ knexVideo, uid, item }) {
   const isFile = Number(item.is_file || 0) === 1;
   const fileHash = item.file_hash ? String(item.file_hash).trim() : '';
 
+  if (mediaType === 'movie' && item.movie_group_key) {
+    const pref = await knexVideo('video_play_preference as p')
+      .join('video_index as part', 'part.file_hash', 'p.file_hash')
+      .where('p.uid', safeUid)
+      .andWhere('part.media_type', 'movie')
+      .andWhere('part.path', item.path)
+      .andWhere('part.movie_group_key', item.movie_group_key)
+      .orderBy('p.last_watched_at', 'desc').orderBy('p.id', 'desc')
+      .first('p.playback_position', 'p.last_watched_at', 'part.duration', 'part.movie_part_no')
+      .catch(() => null);
+    if (pref) return {
+      playback_position: Number(pref.playback_position || 0) || 0,
+      duration: Number(pref.duration || 0) || 0,
+      last_watched_at: pref.last_watched_at,
+      movie_part_no: Number(pref.movie_part_no || 0) || 0,
+    };
+  }
+
   if ((isFile || mediaType === 'bdmv' || mediaType === 'video_ts') && fileHash) {
     const pref = await knexVideo('video_play_preference')
       .where({ uid: safeUid, file_hash: fileHash })
@@ -511,16 +546,19 @@ async function _fillFavoriteStateForRows({ knexVideo, uid, rows }) {
   const ids = list.map(r => Number(r && r.id) || 0).filter(v => v > 0);
   if (ids.length === 0) return;
 
-  const favRows = await knexVideo('video_favorite')
-    .where({ uid: safeUid })
-    .whereIn('index_id', ids)
-    .select('index_id')
+  const relatedIds = await indexIdsForMovieGroups(knexVideo, list);
+  const favRows = await knexVideo('video_favorite as fav')
+    .join('video_index as v', 'v.id', 'fav.index_id')
+    .where('fav.uid', safeUid)
+    .whereIn('fav.index_id', relatedIds)
+    .select('fav.index_id', 'v.path', 'v.media_type', 'v.movie_group_key')
     .catch(() => []);
 
   const favSet = new Set((favRows || []).map(r => Number(r && r.index_id) || 0).filter(v => v > 0));
+  const favGroups = new Set((favRows || []).filter(r => r.media_type === 'movie' && r.movie_group_key).map(r => `${r.path}\0${r.movie_group_key}`));
   for (const r of list) {
     const id = Number(r && r.id) || 0;
-    if (r && typeof r === 'object') r.is_favorite = favSet.has(id);
+    if (r && typeof r === 'object') r.is_favorite = favSet.has(id) || (r.media_type === 'movie' && r.movie_group_key && favGroups.has(`${r.path}\0${r.movie_group_key}`));
   }
 }
 
@@ -711,6 +749,13 @@ class VideoDetailService {
     }
 
     const item = _normalizeIndexRow(row);
+    const movieParts = await _getMovieParts(this.knexVideo, row);
+    if (movieParts.length > 1) {
+      return {
+        playlist: movieParts.map(part => ({ path: part.path, name: `CD${part.number}` })),
+        initialIndex: Math.max(0, movieParts.findIndex(part => part.id === row.id)),
+      };
+    }
     const mediaType = item && item.media_type ? String(item.media_type).trim() : '';
 
     if (item && Number(item.is_file) === 1 && item.full_path) {
@@ -889,6 +934,12 @@ class VideoDetailService {
 
     const viewNow = await _touchVideoIndexViewTime(this.knexVideo, id);
     const item = _normalizeIndexRow(row);
+    const movieParts = await _getMovieParts(this.knexVideo, row);
+    if (movieParts.length > 1) {
+      item.movie_parts = movieParts;
+      item.movie_part_count = movieParts.length;
+      item.movie_total_duration = movieParts.reduce((sum, part) => sum + (Number(part.duration) || 0), 0);
+    }
     if (viewNow) item.view_time = viewNow;
     await _fillFavoriteStateForRows({ knexVideo: this.knexVideo, uid, rows: [item] });
     const mediaType = item && item.media_type ? String(item.media_type).trim() : '';

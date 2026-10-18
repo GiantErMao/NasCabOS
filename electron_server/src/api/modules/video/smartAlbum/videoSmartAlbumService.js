@@ -2,6 +2,7 @@ const path = require('path');
 const userUtil = require('../../../../utils/userUtil');
 const VideoSourceService = require('../source/videoSourceService');
 const smartAlbumFilterUtil = require('./videoSmartAlbumFilterUtil');
+const { whereMovieRepresentative } = require('../../../../workers/videoIndex/movieParts');
 
 function _applyVideoIndexPathPrefixFilter(query, paths) {
   const list = Array.isArray(paths) ? paths.map(p => String(p || '').trim()).filter(Boolean) : [];
@@ -170,7 +171,9 @@ class VideoSmartAlbumService {
     const paths = Array.isArray(validPaths) ? validPaths.filter(Boolean) : [];
     if (paths.length === 0) return [];
 
-    const query = knexVideo('video_index as v').whereIn('v.media_type', ['tv', 'season', 'movie', 'bdmv', 'video_ts']);
+    const query = knexVideo('video_index as v')
+      .whereIn('v.media_type', ['tv', 'season', 'movie', 'bdmv', 'video_ts'])
+      .modify(qb => whereMovieRepresentative(qb, 'v'));
     _applyVideoIndexPathPrefixFilter(query, paths);
     smartAlbumFilterUtil.applySmartAlbumFilter(query, type, filterContent, 'v');
 
