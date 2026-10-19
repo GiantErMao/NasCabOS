@@ -20,7 +20,7 @@ const { MetadataTranslateClient, normalizeTranslateApiUrl, normalizeTranslateTar
 const { buildMovieNfo, buildTvShowNfo, buildSeasonNfo, buildEpisodeNfo, writeTextIfChanged } = require('./jellyfinNfo');
 const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('./metatubeFilenameTags');
 const videoIndexIndexUtil = require('../videoIndexIndexUtil');
-const { parseMoviePart, whereMovieRepresentative } = require('../movieParts');
+const { parseMoviePart, movieMetadataBaseName, moviePartBaseNamesInDirectory, whereMovieRepresentative } = require('../movieParts');
 const { readAndParseNfo, hasValidNfo } = require('../nfoParser');
 const { parseSeasonNumberFromName, parseEpisodeFromName, normalizeNameForNfoGuess } = require('../videoIndexUtil');
 const tmdbUtil = require('./tmdbUtil');
@@ -523,10 +523,35 @@ async function _updateIndexFromNfoAndArtwork({ knex, row, baseDir, searchDir, nf
     .first('poster_path', 'fanart_path', 'logo_path')
     .catch(() => null);
 
-  const artwork = await videoIndexIndexUtil.resolveArtworkPaths({ baseDir, searchDir, current, videoBaseName, onlyVideoBase, seasonNumber });
+  const part = r.media_type === 'movie' ? parseMoviePart(r.filename) : null;
+  const groupBases = part ? moviePartBaseNamesInDirectory(baseDir, r.filename) : [];
+  let sharedArtwork = current;
+  if (part) {
+    const groupArtwork = await knex('video_index')
+      .where({ path: r.path, media_type: 'movie', movie_group_key: part.key })
+      .orderBy('movie_part_no', 'asc').orderBy('id', 'asc')
+      .select('poster_path', 'fanart_path', 'logo_path')
+      .catch(() => []);
+    sharedArtwork = {};
+    for (const field of ['poster_path', 'fanart_path', 'logo_path']) {
+      sharedArtwork[field] = groupArtwork.map(item => String(item[field] || '').trim()).find(Boolean) || '';
+    }
+    if (!Object.values(sharedArtwork).some(Boolean)) sharedArtwork = null;
+  }
+  const canonicalBase = part
+    ? (parseMoviePart(groupBases[0] || '')?.titleStem || movieMetadataBaseName(r.filename, baseDir))
+    : videoBaseName;
+  const artwork = await videoIndexIndexUtil.resolveArtworkPaths({
+    baseDir,
+    searchDir,
+    current: sharedArtwork,
+    videoBaseName: canonicalBase,
+    videoBaseAliases: part ? groupBases : [],
+    onlyVideoBase,
+    seasonNumber,
+  });
 
   const patch = { ...nfoFields, ...artwork, view_time: new Date() };
-  const part = r.media_type === 'movie' ? parseMoviePart(r.filename) : null;
   const groupRows = part
     ? await knex('video_index').where({ path: r.path, media_type: 'movie', movie_group_key: part.key }).select('id').catch(() => [])
     : [];
@@ -722,14 +747,16 @@ class NfoFetchRunner {
       nfoData.title = `${number} ${nfoData.title}`;
     }
     const baseName = path.parse(filename).name;
+    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
+    const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
     const targetDir = isDiscFolderMovie ? movieFolder : dirPath;
-    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
+    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
 
     const posterUrl = details.cover_url || details.big_cover_url || details.thumb_url || details.big_thumb_url || '';
     const fanartUrl = details.big_thumb_url || details.thumb_url || (Array.isArray(details.preview_images) ? details.preview_images[0] : '') || '';
-    if (posterUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'poster.jpg' : `${baseName}-post.jpg`, posterUrl);
-    if (fanartUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'fanart.jpg' : `${baseName}-fanart.jpg`, fanartUrl);
+    if (posterUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, posterUrl);
+    if (fanartUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, fanartUrl);
 
     await _updateIndexFromNfoAndArtwork({
       knex: this.knexVideo,
@@ -737,7 +764,7 @@ class NfoFetchRunner {
       baseDir: dirPath,
       searchDir: targetDir,
       nfoPath,
-      videoBaseName: isDiscFolderMovie ? '' : baseName,
+      videoBaseName: isDiscFolderMovie ? '' : metadataBaseName,
       onlyVideoBase: false,
       seasonNumber: 0,
     });
@@ -909,15 +936,17 @@ class NfoFetchRunner {
     let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
     nfoData = await this.translateNfoData(nfoData);
     const baseName = path.parse(filename).name;
-    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
+    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
+    const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
+    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
 
-    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : `${baseName}-post.jpg`, details.poster_path);
-    if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${baseName}-fanart.jpg`, details.backdrop_path);
+    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, details.poster_path);
+    if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, details.backdrop_path);
     const logo = _pickLogoPathFromImages(details.images);
     if (logo) {
-      await _ensureDownloadedPng(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.png' : `${baseName}-logo.png`, logo);
-      const legacy = path.join(isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.jpg' : `${baseName}-logo.jpg`);
+      await _ensureDownloadedPng(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.png' : `${metadataBaseName}-logo.png`, logo);
+      const legacy = path.join(isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.jpg' : `${metadataBaseName}-logo.jpg`);
       try {
         if (fs.existsSync(legacy) && fs.statSync(legacy).isFile()) fs.unlinkSync(legacy);
       } catch (_) {}
@@ -929,7 +958,7 @@ class NfoFetchRunner {
       baseDir: dirPath,
       searchDir: isDiscFolderMovie ? movieFolder : dirPath,
       nfoPath,
-      videoBaseName: isDiscFolderMovie ? '' : baseName,
+      videoBaseName: isDiscFolderMovie ? '' : metadataBaseName,
       onlyVideoBase: false,
       seasonNumber: 0,
     });
@@ -1307,15 +1336,17 @@ class NfoFetchRunner {
     let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
     nfoData = await this.translateNfoData(nfoData);
     const baseName = path.parse(filename).name;
-    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${baseName}.nfo`);
+    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
+    const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
+    const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
 
-    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : `${baseName}-post.jpg`, details.poster_path);
-    if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${baseName}-fanart.jpg`, details.backdrop_path);
+    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, details.poster_path);
+    if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, details.backdrop_path);
     const logo = _pickLogoPathFromImages(details.images);
     if (logo) {
-      await _ensureDownloadedPng(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.png' : `${baseName}-logo.png`, logo);
-      const legacy = path.join(isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.jpg' : `${baseName}-logo.jpg`);
+      await _ensureDownloadedPng(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.png' : `${metadataBaseName}-logo.png`, logo);
+      const legacy = path.join(isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'logo.jpg' : `${metadataBaseName}-logo.jpg`);
       try {
         if (fs.existsSync(legacy) && fs.statSync(legacy).isFile()) fs.unlinkSync(legacy);
       } catch (_) {}
@@ -1327,7 +1358,7 @@ class NfoFetchRunner {
       baseDir: dirPath,
       searchDir: isDiscFolderMovie ? movieFolder : dirPath,
       nfoPath,
-      videoBaseName: isDiscFolderMovie ? '' : baseName,
+      videoBaseName: isDiscFolderMovie ? '' : metadataBaseName,
       onlyVideoBase: false,
       seasonNumber: 0,
     });

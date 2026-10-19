@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../../../../config/config');
+const { parseMoviePart, movieMetadataBaseName } = require('../../../../workers/videoIndex/movieParts');
 
 async function _unlinkIfExists(filePath) {
   const p = filePath === undefined || filePath === null ? '' : String(filePath).trim();
@@ -167,7 +168,16 @@ async function cleanupMovieOrEpisode({ dirPath, filename }) {
   const baseName = path.parse(fn).name;
   if (!baseName) return { deleted: 0, deletedPaths: [] };
 
+  const moviePart = parseMoviePart(fn);
+  const metadataBaseName = moviePart ? movieMetadataBaseName(fn, dir) : baseName;
+
   const candidates = [
+    ...(moviePart ? [
+      path.join(dir, `${metadataBaseName}.nfo`),
+      path.join(dir, `${metadataBaseName}-poster.jpg`),
+      path.join(dir, `${metadataBaseName}-fanart.jpg`),
+      path.join(dir, `${metadataBaseName}-logo.png`),
+    ] : []),
     path.join(dir, `${baseName}.nfo`),
     path.join(dir, `${baseName}-poster.nfo`),
     path.join(dir, `${baseName}-post.jpg`),
@@ -246,10 +256,10 @@ async function _markTvTreePending(knexVideo, tvFolder) {
 }
 
 async function _markSingleIndexPending(knexVideo, indexId) {
-  const id = Number(indexId || 0) || 0;
-  if (!id || !knexVideo) return false;
+  const ids = (Array.isArray(indexId) ? indexId : [indexId]).map(id => Number(id || 0) || 0).filter(Boolean);
+  if (ids.length === 0 || !knexVideo) return false;
   await knexVideo('video_index')
-    .where({ id })
+    .whereIn('id', ids)
     .update({ nfo_get_state: 0 })
     .catch(() => {});
   return true;
@@ -275,6 +285,9 @@ function _buildClearNfoPatch() {
     nfo_director: '',
     nfo_actor_json: '[]',
     nfo_director_json: '[]',
+    poster_path: '',
+    fanart_path: '',
+    logo_path: '',
   };
 }
 
@@ -323,15 +336,15 @@ async function _clearNfoFieldsForTvTree(knexVideo, tvFolder) {
 }
 
 async function _clearNfoFieldsForSingleIndex(knexVideo, indexId) {
-  const id = Number(indexId || 0) || 0;
-  if (!id || !knexVideo) return false;
+  const ids = (Array.isArray(indexId) ? indexId : [indexId]).map(id => Number(id || 0) || 0).filter(Boolean);
+  if (ids.length === 0 || !knexVideo) return false;
   const patch = _buildClearNfoPatch();
   await knexVideo('video_index')
-    .where({ id })
+    .whereIn('id', ids)
     .update(patch)
     .catch(() => {});
   await knexVideo('video_index2key')
-    .where({ index_id: id })
+    .whereIn('index_id', ids)
     .delete()
     .catch(() => {});
   return true;
@@ -371,7 +384,7 @@ async function cleanupByIndexId(knexVideo, indexId) {
   const resolvedId = await resolveTvIndexIdIfSeason(knexVideo, id);
   const row = await knexVideo('video_index')
     .where({ id: resolvedId })
-    .first('id', 'path', 'filename', 'media_type', 'is_file')
+    .first('id', 'path', 'filename', 'media_type', 'is_file', 'movie_group_key')
     .catch(() => null);
   if (!row) return { deleted: 0, deletedPaths: [], indexId: resolvedId };
 
@@ -396,8 +409,18 @@ async function cleanupByIndexId(knexVideo, indexId) {
 
   if ((mt === 'movie' || mt === 'episod') && p && fn) {
     const res = await cleanupMovieOrEpisode({ dirPath: p, filename: fn });
-    await _markSingleIndexPending(knexVideo, resolvedId);
-    await _clearNfoFieldsForSingleIndex(knexVideo, resolvedId);
+    if (mt === 'movie' && row.movie_group_key) {
+      const groupRows = await knexVideo('video_index')
+        .where({ path: p, media_type: 'movie', movie_group_key: row.movie_group_key })
+        .select('id')
+        .catch(() => []);
+      const ids = groupRows.map(item => Number(item.id) || 0).filter(Boolean);
+      await _markSingleIndexPending(knexVideo, ids);
+      await _clearNfoFieldsForSingleIndex(knexVideo, ids);
+    } else {
+      await _markSingleIndexPending(knexVideo, resolvedId);
+      await _clearNfoFieldsForSingleIndex(knexVideo, resolvedId);
+    }
     return { ...res, indexId: resolvedId };
   }
 

@@ -6,7 +6,7 @@ const FileUtil = require('../../utils/fileUtil');
 const VideoFfprobeUtil = require('../../utils/videoFfprobeUtil');
 const { readAndParseNfo } = require('./nfoParser');
 const { getFirstLetter, isSeasonFolderName, parseEpisodeFromName, parseSeasonNumberFromName, normalizeNameForNfoGuess, isSeasonFolderOfShow } = require('./videoIndexUtil');
-const { parseMoviePart } = require('./movieParts');
+const { parseMoviePart, moviePartBaseNamesInDirectory, movieNfoCandidates } = require('./movieParts');
 
 function _isImageExt(ext) {
   const e = String(ext || '').toLowerCase();
@@ -74,13 +74,15 @@ function _safeFileExists(baseDir, rel) {
   }
 }
 
-async function resolveArtworkPaths({ baseDir, searchDir, current = null, videoBaseName = '', onlyVideoBase = false, seasonNumber = 0 }) {
+async function resolveArtworkPaths({ baseDir, searchDir, current = null, videoBaseName = '', videoBaseAliases = [], onlyVideoBase = false, seasonNumber = 0 }) {
   const base = String(baseDir || '');
   const search = String(searchDir || '');
   if (!base || !search) return { poster_path: '', fanart_path: '', logo_path: '' };
 
   const cur = current && typeof current === 'object' ? current : {};
   const videoBase = _normalizeSimpleName(videoBaseName);
+  const videoAliases = [...new Set((Array.isArray(videoBaseAliases) ? videoBaseAliases : [])
+    .map(name => _normalizeSimpleName(name)).filter(name => name && name !== videoBase))];
   const sn = Math.max(0, Number(seasonNumber || 0) || 0);
   const restrictToVideoBase = !!onlyVideoBase && !!videoBase;
 
@@ -161,20 +163,28 @@ async function resolveArtworkPaths({ baseDir, searchDir, current = null, videoBa
   }
 
   if (!res.poster_path) {
-    const posterCandidates = restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES];
-    if (videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase);
+    const posterCandidates = videoAliases.length > 0
+      ? [`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase,
+        ...(restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES]),
+        ...videoAliases.flatMap(alias => [`${alias}-poster`, `${alias}-post`, `${alias}-thumb`, alias])]
+      : (restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES]);
+    if (videoAliases.length === 0 && videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase);
     const hit = findFirstMatch(posterCandidates);
     if (hit) res.poster_path = makeRel(hit);
   }
   if (!res.fanart_path) {
-    const fanartCandidates = restrictToVideoBase ? [] : [..._FANART_BASE_NAMES];
-    if (videoBase) fanartCandidates.push(`${videoBase}-fanart`);
+    const fanartCandidates = videoAliases.length > 0
+      ? [`${videoBase}-fanart`, ...(restrictToVideoBase ? [] : [..._FANART_BASE_NAMES]), ...videoAliases.map(alias => `${alias}-fanart`)]
+      : (restrictToVideoBase ? [] : [..._FANART_BASE_NAMES]);
+    if (videoAliases.length === 0 && videoBase) fanartCandidates.push(`${videoBase}-fanart`);
     const hit = findFirstMatch(fanartCandidates);
     if (hit) res.fanart_path = makeRel(hit);
   }
   if (!res.logo_path) {
-    const logoCandidates = restrictToVideoBase ? [] : [..._LOGO_BASE_NAMES];
-    if (videoBase) logoCandidates.push(`${videoBase}-logo`, `${videoBase}-clearlogo`);
+    const logoCandidates = videoAliases.length > 0
+      ? [`${videoBase}-logo`, `${videoBase}-clearlogo`, ...(restrictToVideoBase ? [] : [..._LOGO_BASE_NAMES]), ...videoAliases.flatMap(alias => [`${alias}-logo`, `${alias}-clearlogo`])]
+      : (restrictToVideoBase ? [] : [..._LOGO_BASE_NAMES]);
+    if (videoAliases.length === 0 && videoBase) logoCandidates.push(`${videoBase}-logo`, `${videoBase}-clearlogo`);
     const hit = findFirstMatch(logoCandidates);
     if (hit) res.logo_path = makeRel(hit);
   }
@@ -400,25 +410,14 @@ async function findAndParseNfoForVideo(fullPath) {
   const base = path.parse(resolved).name;
   const dirBase = path.basename(dir);
   const part = parseMoviePart(path.basename(resolved));
-  let firstPartNfo = '';
-  if (part) {
-    try {
-      const firstPart = fs.readdirSync(dir).find(name => {
-        if (path.extname(name).toLowerCase() !== '.nfo') return false;
-        const candidate = parseMoviePart(name);
-        return candidate && candidate.key === part.key && candidate.number === 1;
-      });
-      if (firstPart) firstPartNfo = path.join(dir, firstPart);
-    } catch (_) {}
-  }
   const candidates = part
-    ? [path.join(dir, `${part.titleStem}.nfo`), firstPartNfo, path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${dirBase}.nfo`)].filter(Boolean)
+    ? movieNfoCandidates(dir, path.basename(resolved))
     : [path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${dirBase}.nfo`), path.join(dir, 'tvshow.nfo')];
   for (const p of candidates) {
     try {
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
         const parsed = await readAndParseNfo(p);
-        return { nfoPath: p, parsed };
+        if (parsed) return { nfoPath: p, parsed };
       }
     } catch (_) {}
   }
@@ -1006,11 +1005,27 @@ async function indexMovieFile({ knex, fullPath, dirPath, filename, ext }) {
     .first('poster_path', 'fanart_path', 'logo_path')
     .catch(() => null);
 
+  const moviePart = parseMoviePart(filename);
+  const moviePartBases = moviePart ? moviePartBaseNamesInDirectory(dirPath, filename) : [];
+  let sharedArtwork = existed;
+  if (moviePart) {
+    const groupArtwork = await knex('video_index')
+      .where({ path: dirPath, media_type: 'movie', movie_group_key: moviePart.key })
+      .orderBy('movie_part_no', 'asc').orderBy('id', 'asc')
+      .select('poster_path', 'fanart_path', 'logo_path')
+      .catch(() => []);
+    sharedArtwork = {};
+    for (const field of ['poster_path', 'fanart_path', 'logo_path']) {
+      sharedArtwork[field] = groupArtwork.map(row => String(row[field] || '').trim()).find(Boolean) || '';
+    }
+    if (!Object.values(sharedArtwork).some(Boolean)) sharedArtwork = null;
+  }
   const artwork = await resolveArtworkPaths({
     baseDir: dirPath,
     searchDir: dirPath,
-    current: existed,
-    videoBaseName: path.parse(filename).name,
+    current: sharedArtwork,
+    videoBaseName: moviePart ? (parseMoviePart(moviePartBases[0] || '')?.titleStem || moviePart.titleStem) : path.parse(filename).name,
+    videoBaseAliases: moviePart ? moviePartBases : [],
   });
 
   const fileHash = await FileUtil.getFileHash(p);
@@ -1054,7 +1069,6 @@ async function indexMovieFile({ knex, fullPath, dirPath, filename, ext }) {
   const nfoFields = _nfoFieldsFromParsed(parsed) || {};
 
   const baseName = path.parse(filename).name;
-  const moviePart = parseMoviePart(filename);
   const fallbackName = normalizeNameForNfoGuess(moviePart ? moviePart.titleStem : baseName) || (moviePart ? moviePart.titleStem : baseName);
   const nfoName = nfoFields.nfo_name || fallbackName || baseName;
 

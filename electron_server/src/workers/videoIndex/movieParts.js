@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 
 // Only a terminal CD number is a movie part. Keep the directory in the
 // database lookup so identically named movies in different folders stay apart.
@@ -11,6 +12,49 @@ function parseMoviePart(filename) {
   const titleStem = match[1].replace(/[._-]+$/, '');
   if (!titleStem) return null;
   return { key: titleStem.toLowerCase(), titleStem, number: Number(match[2]) };
+}
+
+function movieMetadataBaseName(filename, dir = '') {
+  const part = parseMoviePart(filename);
+  if (!part) return path.parse(String(filename || '')).name;
+  const names = dir ? moviePartBaseNamesInDirectory(dir, filename) : [];
+  return parseMoviePart(names[0] || '')?.titleStem || part.titleStem;
+}
+
+// Keep sidecar lookup deterministic across every file in a group: canonical
+// group name first, then legacy per-part names in CD order.
+function moviePartBaseNamesInDirectory(dir, filename) {
+  const part = parseMoviePart(filename);
+  if (!part) return [path.parse(String(filename || '')).name].filter(Boolean);
+  let names = [];
+  try {
+    names = fs.readdirSync(dir, { withFileTypes: true }).filter(entry => {
+      if (!entry.isFile()) return false;
+      const name = entry.name;
+      const ext = path.extname(name).toLowerCase();
+      return ext !== '.nfo' && parseMoviePart(name)?.key === part.key;
+    }).map(entry => entry.name);
+  } catch (_) {}
+  names.sort((a, b) => {
+    const pa = parseMoviePart(a);
+    const pb = parseMoviePart(b);
+    return pa.number - pb.number || a.localeCompare(b);
+  });
+  return [...new Set(names.map(name => path.parse(name).name))];
+}
+
+function movieNfoCandidates(dir, filename) {
+  const part = parseMoviePart(filename);
+  if (!part) return [path.join(dir, `${path.parse(String(filename || '')).name}.nfo`)];
+  const names = moviePartBaseNamesInDirectory(dir, filename);
+  const groupName = parseMoviePart(names[0] || '')?.titleStem || part.titleStem;
+  const candidates = [
+    path.join(dir, `${groupName}.nfo`),
+    ...names.map(name => path.join(dir, `${name}.nfo`)),
+    path.join(dir, 'movie.nfo'),
+    path.join(dir, `${path.basename(dir)}.nfo`),
+  ];
+  return [...new Set(candidates)];
 }
 
 // SQL alias is fixed by our callers, never user input.
@@ -48,4 +92,11 @@ async function indexIdsForMovieGroups(knex, rows) {
   return [...ids];
 }
 
-module.exports = { parseMoviePart, whereMovieRepresentative, indexIdsForMovieGroups };
+module.exports = {
+  parseMoviePart,
+  movieMetadataBaseName,
+  moviePartBaseNamesInDirectory,
+  movieNfoCandidates,
+  whereMovieRepresentative,
+  indexIdsForMovieGroups,
+};

@@ -25,6 +25,7 @@ class VideoSearchMediaDialog {
     final videoCode = extractVideoCodeFromFilename(item.filename);
     final filenameWithoutExtension = p
         .basenameWithoutExtension(item.filename)
+        .replaceFirst(RegExp(r'\.CD\d+$', caseSensitive: false), '')
         .trim();
     final defaultQuery = videoCode.isNotEmpty
         ? videoCode

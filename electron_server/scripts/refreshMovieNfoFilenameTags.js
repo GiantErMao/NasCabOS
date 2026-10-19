@@ -6,6 +6,7 @@ const path = require('node:path');
 const { XMLValidator } = require('fast-xml-parser');
 const { parseNfoXml } = require('../src/workers/videoIndex/nfoParser');
 const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('../src/workers/videoIndex/nfoFetchWorker/metatubeFilenameTags');
+const { parseMoviePart, movieMetadataBaseName, movieNfoCandidates } = require('../src/workers/videoIndex/movieParts');
 
 async function main() {
   const [database, backupRoot, mode] = process.argv.slice(2);
@@ -19,9 +20,10 @@ async function main() {
   const plans = [];
   for (const row of rows) {
     const disc = row.media_type !== 'movie';
-    const base = disc ? row.filename : path.parse(row.filename).name;
+    const part = !disc && row.media_type === 'movie' ? parseMoviePart(row.filename) : null;
+    const base = disc ? row.filename : part ? movieMetadataBaseName(row.filename, row.path) : path.parse(row.filename).name;
     const dir = disc ? path.join(row.path, row.filename) : row.path;
-    const candidates = disc ? [path.join(dir, 'movie.nfo'), path.join(dir, `${base}.nfo`)] :
+    const candidates = disc ? [path.join(dir, 'movie.nfo'), path.join(dir, `${base}.nfo`)] : part ? movieNfoCandidates(dir, row.filename) :
       [path.join(dir, `${base}.nfo`), path.join(dir, 'movie.nfo'), path.join(dir, `${path.basename(dir)}.nfo`)];
     const nfo = [...new Set(candidates)].find(p => fs.existsSync(p));
     if (!nfo) { summary.missingNfo++; continue; }
@@ -29,9 +31,9 @@ async function main() {
       const xml = fs.readFileSync(nfo, 'utf8');
       const parsed = XMLValidator.validate(xml) === true ? parseNfoXml(xml) : null;
       if (!parsed || parsed.type !== 'movie' || !/<\/movie\s*>/i.test(xml)) { summary.invalidNfo++; continue; }
-      const expected = addMetaTubeFilenameTags([], row.filename, { isDirectory: disc });
+      const expected = addMetaTubeFilenameTags([], part ? base : row.filename, { isDirectory: disc });
       if (expected.length) summary.matched++;
-      const tags = addMetaTubeFilenameTags(parsed.tags, row.filename, { isDirectory: disc });
+      const tags = addMetaTubeFilenameTags(parsed.tags, part ? base : row.filename, { isDirectory: disc });
       const additions = tags.filter(tag => !(parsed.tags || []).includes(tag));
       const genres = mergeMovieMetadataGenres(parsed.genres, tags);
       const genreAdditions = genres.filter(genre => !(parsed.genres || []).includes(genre));
@@ -50,20 +52,26 @@ async function main() {
   if (apply) {
     fs.mkdirSync(backupRoot, { recursive: true });
     await db.backup(path.join(backupRoot, 'nascab_video.db'));
-    fs.writeFileSync(path.join(backupRoot, 'manifest.json'), JSON.stringify(plans.map(p => ({ id: p.row.id, nfo: p.nfo, oldTags: p.row.nfo_tags, newTags: p.indexTags, oldGenres: p.row.nfo_genres, newGenres: p.indexGenres, backup: p.updated !== p.xml ? `${p.row.id}.nfo` : null })), null, 2), { flag: 'wx' });
+    const backupNameByNfo = new Map();
+    for (const p of plans) {
+      if (p.updated !== p.xml && !backupNameByNfo.has(p.nfo)) backupNameByNfo.set(p.nfo, `${p.row.id}.nfo`);
+    }
+    fs.writeFileSync(path.join(backupRoot, 'manifest.json'), JSON.stringify(plans.map(p => ({ id: p.row.id, nfo: p.nfo, oldTags: p.row.nfo_tags, newTags: p.indexTags, oldGenres: p.row.nfo_genres, newGenres: p.indexGenres, backup: backupNameByNfo.get(p.nfo) || null })), null, 2), { flag: 'wx' });
     const update = db.prepare('UPDATE video_index SET nfo_tags = ?, nfo_genres = ? WHERE id = ?');
     const insertKey = db.prepare("INSERT INTO video_index2key (index_id,key,key_type) SELECT ?,?,'genres' WHERE NOT EXISTS (SELECT 1 FROM video_index2key WHERE index_id=? AND key=? AND key_type='genres')");
     const syncIndex = db.transaction(p => {
       update.run(p.indexTags, p.indexGenres, p.row.id);
       for (const genre of p.missingKeys) insertKey.run(p.row.id, genre, p.row.id, genre);
     });
+    const writtenNfos = new Set();
     for (const p of plans) {
       // Refuse to overwrite metadata that changed after planning.
-      if (fs.readFileSync(p.nfo, 'utf8') !== p.xml) throw new Error(`NFO changed during refresh: ${p.nfo}`);
-      if (p.updated !== p.xml) {
-        fs.copyFileSync(p.nfo, path.join(backupRoot, `${p.row.id}.nfo`), fs.constants.COPYFILE_EXCL);
+      if (!writtenNfos.has(p.nfo) && fs.readFileSync(p.nfo, 'utf8') !== p.xml) throw new Error(`NFO changed during refresh: ${p.nfo}`);
+      if (!writtenNfos.has(p.nfo) && p.updated !== p.xml) {
+        fs.copyFileSync(p.nfo, path.join(backupRoot, backupNameByNfo.get(p.nfo)), fs.constants.COPYFILE_EXCL);
         fs.writeFileSync(p.nfo, p.updated, 'utf8');
       }
+      writtenNfos.add(p.nfo);
       syncIndex(p);
       const verified = parseNfoXml(fs.readFileSync(p.nfo, 'utf8'));
       if (!verified || [...new Set(verified.tags)].join(',') !== p.indexTags || [...new Set(verified.genres)].join(',') !== p.indexGenres) throw new Error(`Tag verification failed: ${p.nfo}`);

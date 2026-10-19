@@ -4,6 +4,7 @@ const path = require('path');
 const { hasValidNfo } = require('../../../../workers/videoIndex/nfoParser');
 const fileService = require('../../file/core/fileService');
 const tableFileLog = require('../../../../db/table/tableFileLog');
+const { movieNfoCandidates } = require('../../../../workers/videoIndex/movieParts');
 
 class VideoScrapeController {
   async start(req, res) {
@@ -34,23 +35,33 @@ class VideoScrapeController {
           const mediaType = row.media_type ? String(row.media_type).trim() : '';
           const dirPath = row.path ? String(row.path).trim() : '';
           const filename = row.filename ? String(row.filename).trim() : '';
-          let nfoPath = '';
+          let nfoPaths = [];
           let expectedType = '';
 
           if ((mediaType === 'movie' || mediaType === 'episod' || mediaType === 'bdmv' || mediaType === 'video_ts') && dirPath && filename) {
-            nfoPath = (mediaType === 'bdmv' || mediaType === 'video_ts')
-              ? path.join(dirPath, filename, 'movie.nfo')
-              : path.join(dirPath, `${path.parse(filename).name}.nfo`);
+            nfoPaths = mediaType === 'movie'
+              ? movieNfoCandidates(dirPath, filename)
+              : [(mediaType === 'bdmv' || mediaType === 'video_ts')
+                ? path.join(dirPath, filename, 'movie.nfo')
+                : path.join(dirPath, `${path.parse(filename).name}.nfo`)];
             expectedType = mediaType === 'episod' ? 'episodedetails' : 'movie';
           } else if (mediaType === 'tv' && dirPath && filename) {
-            nfoPath = path.join(dirPath, filename, 'tvshow.nfo');
+            nfoPaths = [path.join(dirPath, filename, 'tvshow.nfo')];
             expectedType = 'tvshow';
           } else if (mediaType === 'season' && dirPath && filename) {
-            nfoPath = path.join(dirPath, filename, 'season.nfo');
+            nfoPaths = [path.join(dirPath, filename, 'season.nfo')];
             expectedType = 'season';
           }
 
-          const hasNfo = nfoPath && expectedType ? await hasValidNfo(nfoPath, expectedType) : false;
+          let hasNfo = false;
+          if (expectedType) {
+            for (const nfoPath of nfoPaths) {
+              if (await hasValidNfo(nfoPath, expectedType)) {
+                hasNfo = true;
+                break;
+              }
+            }
+          }
           if (hasNfo) {
             if (mediaType === 'movie' || mediaType === 'episod' || mediaType === 'bdmv' || mediaType === 'video_ts') {
               return ResponseUtil.success(req, res, { requestId: '', started: false, skipped: true }, 'common.SUCCESS', 200);
