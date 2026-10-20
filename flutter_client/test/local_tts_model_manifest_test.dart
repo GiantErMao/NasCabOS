@@ -7,10 +7,10 @@ void main() {
   test('Matcha manifest uses verified acoustic and vocoder artifacts', () {
     expect(LocalTtsModelManifest.id, 'matcha-icefall-zh-baker-v1');
     expect(LocalTtsModelManifest.artifacts, hasLength(2));
-    expect(LocalTtsModelManifest.acousticArchive.length, 75480421);
+    expect(LocalTtsModelManifest.acousticArchive.length, 75480460);
     expect(
       LocalTtsModelManifest.acousticArchive.sha256,
-      'fc41b5115c45ffab7f46e1a5a0fcefd15b2698e32ca5d080dde7a5e7caa2fe56',
+      'c3e1889c1b745180445daba6c1f51fb4aeceaff8500da425da6c5ff80e8620c5',
     );
     expect(LocalTtsModelManifest.vocoder.length, 53884024);
     expect(

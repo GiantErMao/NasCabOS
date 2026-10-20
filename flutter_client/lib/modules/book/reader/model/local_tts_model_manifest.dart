@@ -1,13 +1,12 @@
 class LocalTtsArtifact {
   const LocalTtsArtifact({
     required this.fileName,
-    required this.url,
     required this.length,
     required this.sha256,
   });
 
   final String fileName;
-  final String url;
+  String get assetPath => 'assets/tts/$fileName';
   final int length;
   final String sha256;
 }
@@ -38,22 +37,16 @@ class LocalTtsModelManifest {
       'https://www.data-baker.com/open_source.html';
   static const String licenseNotice =
       'The DataBaker training data permits non-commercial use only. '
-      'Review and comply with the source license before downloading.';
+      'Review and comply with the source license before using the bundled model.';
 
   static const LocalTtsArtifact acousticArchive = LocalTtsArtifact(
     fileName: 'matcha-icefall-zh-baker.tar.bz2',
-    url:
-        'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/'
-        'matcha-icefall-zh-baker.tar.bz2',
-    length: 75480421,
-    sha256: 'fc41b5115c45ffab7f46e1a5a0fcefd15b2698e32ca5d080dde7a5e7caa2fe56',
+    length: 75480460,
+    sha256: 'c3e1889c1b745180445daba6c1f51fb4aeceaff8500da425da6c5ff80e8620c5',
   );
 
   static const LocalTtsArtifact vocoder = LocalTtsArtifact(
     fileName: 'vocos-22khz-univ.onnx',
-    url:
-        'https://github.com/k2-fsa/sherpa-onnx/releases/download/'
-        'vocoder-models/vocos-22khz-univ.onnx',
     length: 53884024,
     sha256: '0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081',
   );
@@ -85,7 +78,4 @@ class LocalTtsModelManifest {
       gender: 'female',
     ),
   ];
-
-  static int get downloadBytes =>
-      artifacts.fold<int>(0, (sum, artifact) => sum + artifact.length);
 }

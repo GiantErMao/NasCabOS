@@ -1,22 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-enum LocalTtsModelPhase {
-  notInstalled,
-  downloading,
-  verifying,
-  extracting,
-  ready,
-  error,
-}
+enum LocalTtsModelPhase { notInstalled, verifying, extracting, ready, error }
 
 @immutable
 class LocalTtsModelState {
   const LocalTtsModelState({
     required this.phase,
-    this.progress = 0,
     this.currentFile,
-    this.downloadedBytes = 0,
-    this.totalBytes = 0,
     this.installedBytes = 0,
     this.message,
   });
@@ -25,16 +15,12 @@ class LocalTtsModelState {
     : this(phase: LocalTtsModelPhase.notInstalled);
 
   final LocalTtsModelPhase phase;
-  final double progress;
   final String? currentFile;
-  final int downloadedBytes;
-  final int totalBytes;
   final int installedBytes;
   final String? message;
 
   bool get isReady => phase == LocalTtsModelPhase.ready;
   bool get isBusy =>
-      phase == LocalTtsModelPhase.downloading ||
       phase == LocalTtsModelPhase.verifying ||
       phase == LocalTtsModelPhase.extracting;
 }
@@ -69,9 +55,7 @@ abstract class LocalTtsModelStoreBase extends ChangeNotifier {
 
   Future<void> refresh();
 
-  Future<void> download();
-
-  void cancelDownload();
+  Future<void> installBundledModel();
 
   Future<void> deleteInstalledModel();
 

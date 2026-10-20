@@ -8,9 +8,6 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
   LocalTtsModelState get state => _state;
 
   @override
-  void cancelDownload() {}
-
-  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -21,7 +18,7 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
   Future<void> deleteInstalledModel() async {}
 
   @override
-  Future<void> download() async {
+  Future<void> installBundledModel() async {
     throw UnsupportedError('Local neural TTS is available on Android only');
   }
 

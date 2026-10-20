@@ -389,7 +389,8 @@ class _BookTxtReaderPageState extends State<BookTxtReaderPage> {
     try {
       await _speechController.initialize();
     } catch (_) {}
-    await _localTtsModelStore?.refresh();
+    final modelStore = _localTtsModelStore;
+    if (modelStore != null) unawaited(modelStore.refresh());
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,

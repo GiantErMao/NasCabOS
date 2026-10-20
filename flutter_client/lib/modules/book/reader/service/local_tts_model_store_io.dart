@@ -5,7 +5,6 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -15,15 +14,19 @@ import 'local_tts_feature_flag.dart';
 import 'local_tts_model_store_shared.dart';
 
 class LocalTtsModelStore extends LocalTtsModelStoreBase {
-  LocalTtsModelStore({Dio? dio}) : _dio = dio ?? Dio();
+  LocalTtsModelStore({AssetBundle? bundle}) : _bundle = bundle ?? rootBundle;
 
   static const MethodChannel _storageChannel = MethodChannel(
     'com.nascabos/storage',
   );
 
-  final Dio _dio;
+  // A reader can close while installation continues. Other readers must wait
+  // before cleaning staging files or starting another installation.
+  static final Map<String, Future<void>> _rootInstallations = {};
+
+  final AssetBundle _bundle;
   LocalTtsModelState _state = const LocalTtsModelState.notInstalled();
-  CancelToken? _cancelToken;
+  Future<void>? _installation;
   bool _disposed = false;
 
   @override
@@ -35,13 +38,15 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
       _update(const LocalTtsModelState.notInstalled());
       return;
     }
+    if (_installation != null) return _installation!;
     try {
       final root = await _modelRoot();
+      await _rootInstallations[root.path];
       await _deleteStaleStaging(root);
       await _deleteLegacyInstallations(root);
       final target = Directory(p.join(root.path, LocalTtsModelManifest.id));
       if (!await _isValidInstallation(target)) {
-        _update(const LocalTtsModelState.notInstalled());
+        await installBundledModel();
         return;
       }
       _update(
@@ -61,13 +66,48 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
   }
 
   @override
-  Future<void> download() async {
+  Future<void> installBundledModel() {
     if (!localTtsAvailable) {
-      throw UnsupportedError('Local neural TTS is available on Android only');
+      return Future.error(
+        UnsupportedError('Local neural TTS is available on Android only'),
+      );
     }
-    if (_state.isBusy) return;
+    return _installation ??= _installBundledModel().whenComplete(() {
+      _installation = null;
+    });
+  }
 
-    final root = await _modelRoot();
+  Future<void> _installBundledModel() async {
+    _update(const LocalTtsModelState(phase: LocalTtsModelPhase.extracting));
+    try {
+      final root = await _modelRoot();
+      final pending = _rootInstallations[root.path];
+      if (pending != null) {
+        await pending;
+      } else {
+        final installation = _installIntoRoot(root);
+        _rootInstallations[root.path] = installation;
+        try {
+          await installation;
+        } finally {
+          _rootInstallations.remove(root.path);
+        }
+      }
+      final target = Directory(p.join(root.path, LocalTtsModelManifest.id));
+      _update(
+        LocalTtsModelState(
+          phase: LocalTtsModelPhase.ready,
+          installedBytes: await _directorySize(target),
+        ),
+      );
+    } catch (error) {
+      _fail(error);
+      rethrow;
+    }
+  }
+
+  Future<void> _installIntoRoot(Directory root) async {
+    Directory? temporary;
     try {
       final freeBytes = await _availableBytes(root.path);
       if (freeBytes != null &&
@@ -77,76 +117,64 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
           'At least 350 MB of free app storage is required',
         );
       }
-
-      final downloads = Directory(p.join(root.path, '.downloads'));
-      await downloads.create(recursive: true);
-      _cancelToken = CancelToken();
-      var completedBytes = 0;
+      temporary = await Directory(
+        p.join(root.path, '.bundled'),
+      ).create(recursive: true);
       for (final artifact in LocalTtsModelManifest.artifacts) {
-        final part = File(p.join(downloads.path, '${artifact.fileName}.part'));
-        await _downloadArtifact(artifact, part, completedBytes, _cancelToken!);
         _update(
           LocalTtsModelState(
             phase: LocalTtsModelPhase.verifying,
             currentFile: artifact.fileName,
-            downloadedBytes: completedBytes + artifact.length,
-            totalBytes: LocalTtsModelManifest.downloadBytes,
           ),
         );
-        await _verifyArtifact(part, artifact);
-        completedBytes += artifact.length;
+        final file = File(p.join(temporary.path, artifact.fileName));
+        await _copyBundledArtifact(artifact, file);
+        await _verifyArtifact(file, artifact);
       }
-
-      _update(
-        LocalTtsModelState(
-          phase: LocalTtsModelPhase.extracting,
-          downloadedBytes: completedBytes,
-          totalBytes: LocalTtsModelManifest.downloadBytes,
-        ),
+      _update(const LocalTtsModelState(phase: LocalTtsModelPhase.extracting));
+      final stagingPath = p.join(
+        root.path,
+        '.staging-${DateTime.now().microsecondsSinceEpoch}',
       );
-      final generation = DateTime.now().microsecondsSinceEpoch;
-      final staging = Directory(p.join(root.path, '.staging-$generation'));
+      final archivePath = p.join(
+        temporary.path,
+        LocalTtsModelManifest.acousticArchive.fileName,
+      );
+      final vocoderPath = p.join(
+        temporary.path,
+        LocalTtsModelManifest.vocoder.fileName,
+      );
+      final rootPath = root.path;
       await Isolate.run(
-        () => _installInIsolate(
-          root.path,
-          staging.path,
-          p.join(
-            downloads.path,
-            '${LocalTtsModelManifest.acousticArchive.fileName}.part',
-          ),
-          p.join(
-            downloads.path,
-            '${LocalTtsModelManifest.vocoder.fileName}.part',
-          ),
-        ),
+        () =>
+            _installInIsolate(rootPath, stagingPath, archivePath, vocoderPath),
       );
-      await downloads.delete(recursive: true);
-      await refresh();
-    } on DioException catch (error) {
-      if (CancelToken.isCancel(error)) {
-        _update(const LocalTtsModelState.notInstalled());
-        return;
+      final oldDownloads = Directory(p.join(root.path, '.downloads'));
+      if (await oldDownloads.exists()) {
+        await oldDownloads.delete(recursive: true);
       }
-      _fail(error);
-      rethrow;
-    } catch (error) {
-      _fail(error);
-      rethrow;
     } finally {
-      _cancelToken = null;
+      if (temporary != null && await temporary.exists()) {
+        await temporary.delete(recursive: true);
+      }
     }
   }
 
-  @override
-  void cancelDownload() {
-    _cancelToken?.cancel('user_cancelled');
+  Future<void> _copyBundledArtifact(
+    LocalTtsArtifact artifact,
+    File destination,
+  ) async {
+    final data = await _bundle.load(artifact.assetPath);
+    await destination.writeAsBytes(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      flush: true,
+    );
   }
 
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    cancelDownload();
     super.dispose();
   }
 
@@ -183,68 +211,6 @@ class LocalTtsModelStore extends LocalTtsModelStoreBase {
         file('matcha-icefall-zh-baker/number.fst'),
       ].join(','),
     );
-  }
-
-  Future<void> _downloadArtifact(
-    LocalTtsArtifact artifact,
-    File destination,
-    int completedBytes,
-    CancelToken cancelToken,
-  ) async {
-    var existing = await destination.exists() ? await destination.length() : 0;
-    if (existing > artifact.length) {
-      await destination.delete();
-      existing = 0;
-    }
-    if (existing == artifact.length) {
-      _update(
-        LocalTtsModelState(
-          phase: LocalTtsModelPhase.downloading,
-          progress:
-              (completedBytes + existing) / LocalTtsModelManifest.downloadBytes,
-          currentFile: artifact.fileName,
-          downloadedBytes: completedBytes + existing,
-          totalBytes: LocalTtsModelManifest.downloadBytes,
-        ),
-      );
-      return;
-    }
-    final response = await _dio.get<ResponseBody>(
-      artifact.url,
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: existing > 0
-            ? <String, String>{'Range': 'bytes=$existing-'}
-            : null,
-        followRedirects: true,
-      ),
-      cancelToken: cancelToken,
-    );
-    final resumed =
-        existing > 0 && response.statusCode == HttpStatus.partialContent;
-    if (!resumed) existing = 0;
-    final sink = destination.openWrite(
-      mode: resumed ? FileMode.append : FileMode.write,
-    );
-    var received = existing;
-    try {
-      await for (final chunk in response.data!.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        final totalDownloaded = completedBytes + received;
-        _update(
-          LocalTtsModelState(
-            phase: LocalTtsModelPhase.downloading,
-            progress: totalDownloaded / LocalTtsModelManifest.downloadBytes,
-            currentFile: artifact.fileName,
-            downloadedBytes: totalDownloaded,
-            totalBytes: LocalTtsModelManifest.downloadBytes,
-          ),
-        );
-      }
-    } finally {
-      await sink.close();
-    }
   }
 
   Future<void> _verifyArtifact(File file, LocalTtsArtifact artifact) async {

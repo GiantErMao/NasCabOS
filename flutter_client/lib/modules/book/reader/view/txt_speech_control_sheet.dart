@@ -214,40 +214,6 @@ class TxtSpeechControlSheet extends StatelessWidget {
     final state = store.state;
     switch (state.phase) {
       case LocalTtsModelPhase.notInstalled:
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.download_outlined),
-          title: Text('txt_speech_model_not_installed'.tr),
-          subtitle: Text('txt_speech_model_download_size'.tr),
-          trailing: FilledButton(
-            onPressed: () => _confirmAndDownload(context, store),
-            child: Text('txt_speech_model_download'.tr),
-          ),
-        );
-      case LocalTtsModelPhase.downloading:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            LinearProgressIndicator(value: state.progress.clamp(0, 1)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${state.currentFile ?? ''} '
-                    '${_formatBytes(state.downloadedBytes)} / '
-                    '${_formatBytes(state.totalBytes)}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                TextButton(
-                  onPressed: store.cancelDownload,
-                  child: Text('txt_speech_model_cancel'.tr),
-                ),
-              ],
-            ),
-          ],
-        );
       case LocalTtsModelPhase.verifying:
       case LocalTtsModelPhase.extracting:
         return ListTile(
@@ -268,17 +234,34 @@ class TxtSpeechControlSheet extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.offline_bolt_outlined),
           title: const Text(LocalTtsModelManifest.displayName),
+          trailing: IconButton(
+            tooltip: 'txt_speech_license_title'.tr,
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text('txt_speech_license_title'.tr),
+                content: const Text(LocalTtsModelManifest.licenseNotice),
+                actions: [
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri.parse(LocalTtsModelManifest.licenseUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Text('txt_speech_license_source'.tr),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text('confirm'.tr),
+                  ),
+                ],
+              ),
+            ),
+          ),
           subtitle: Text(
             'txt_speech_model_installed_size'.trParams(<String, String>{
               'size': _formatBytes(state.installedBytes),
             }),
-          ),
-          trailing: IconButton(
-            tooltip: 'txt_speech_model_delete'.tr,
-            onPressed: controller.hasActiveSpeech
-                ? null
-                : () => _confirmDelete(context, store),
-            icon: const Icon(Icons.delete_outline),
           ),
         );
       case LocalTtsModelPhase.error:
@@ -291,73 +274,17 @@ class TxtSpeechControlSheet extends StatelessWidget {
           title: Text('txt_speech_model_failed'.tr),
           subtitle: Text(state.message ?? ''),
           trailing: TextButton(
-            onPressed: () => _confirmAndDownload(context, store),
+            onPressed: () => _installBundledModel(store),
             child: Text('txt_speech_model_retry'.tr),
           ),
         );
     }
   }
 
-  Future<void> _confirmAndDownload(
-    BuildContext context,
-    LocalTtsModelStoreBase store,
-  ) async {
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('txt_speech_license_title'.tr),
-        content: Text('txt_speech_license_body'.tr),
-        actions: [
-          TextButton(
-            onPressed: () => launchUrl(
-              Uri.parse(LocalTtsModelManifest.licenseUrl),
-              mode: LaunchMode.externalApplication,
-            ),
-            child: Text('txt_speech_license_source'.tr),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text('cancel'.tr),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text('txt_speech_license_accept'.tr),
-          ),
-        ],
-      ),
-    );
-    if (accepted != true) return;
+  Future<void> _installBundledModel(LocalTtsModelStoreBase store) async {
     try {
-      await store.download();
+      await store.installBundledModel();
     } catch (_) {}
-  }
-
-  Future<void> _confirmDelete(
-    BuildContext context,
-    LocalTtsModelStoreBase store,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('txt_speech_model_delete'.tr),
-        content: Text('txt_speech_model_delete_confirm'.tr),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text('cancel'.tr),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text('confirm'.tr),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    if (controller.backend == TxtSpeechBackend.localNeural) {
-      await controller.switchBackend(TxtSpeechBackend.system);
-    }
-    await store.deleteInstalledModel();
   }
 
   String _formatBytes(int bytes) {
