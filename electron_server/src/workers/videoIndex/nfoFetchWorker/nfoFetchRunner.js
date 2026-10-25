@@ -738,7 +738,7 @@ class NfoFetchRunner {
     const movieFolder = isDiscFolderMovie ? path.join(dirPath, filename) : '';
 
     let nfoData = _mapMetaTubeMovieToNfo(details);
-    nfoData.tags = addMetaTubeFilenameTags(nfoData.tags, filename, { isDirectory: isDiscFolderMovie });
+    nfoData.tags = addMetaTubeFilenameTags(nfoData.tags, filename, { isDirectory: isDiscFolderMovie, directoryName: path.basename(dirPath) });
     nfoData = await this.translateNfoData(nfoData);
     nfoData.genres = mergeMovieMetadataGenres(nfoData.genres, nfoData.tags);
     // Add the number after translation so title translation cannot alter it.

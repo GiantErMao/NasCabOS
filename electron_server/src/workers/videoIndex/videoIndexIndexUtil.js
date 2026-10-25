@@ -7,6 +7,7 @@ const VideoFfprobeUtil = require('../../utils/videoFfprobeUtil');
 const { readAndParseNfo } = require('./nfoParser');
 const { getFirstLetter, isSeasonFolderName, parseEpisodeFromName, parseSeasonNumberFromName, normalizeNameForNfoGuess, isSeasonFolderOfShow } = require('./videoIndexUtil');
 const { parseMoviePart, moviePartBaseNamesInDirectory, movieNfoCandidates } = require('./movieParts');
+const { addMetaTubeFilenameTags, mergeMovieMetadataGenres } = require('./nfoFetchWorker/metatubeFilenameTags');
 
 function _isImageExt(ext) {
   const e = String(ext || '').toLowerCase();
@@ -309,7 +310,8 @@ function _normalizeNfoNumberCandidate(value) {
 
   const parts = code.split('-');
   const prefix = parts.length >= 2 ? parts[0].toLowerCase() : (code.match(/^([A-Z]+)\d+$/) || [])[1]?.toLowerCase() || '';
-  const lastNumber = Number(parts.length >= 2 ? parts[parts.length - 1] : (code.match(/(\d+)$/) || [])[1]);
+  const tail = parts.length >= 2 ? parts[parts.length - 1] : (code.match(/(\d+)$/) || [])[1];
+  const lastNumber = Number(parts.length === 2 && /^[A-Z]\d{2,6}$/.test(tail) ? tail.slice(1) : tail);
   if (!prefix) return '';
   if (!Number.isFinite(lastNumber)) return '';
 
@@ -329,6 +331,7 @@ function _extractNfoNumberFromText(value) {
     /(^|[^0-9a-z])((?:fc2[-_\s]?(?:ppv[-_\s]?)?\d{5,8}))(?=$|[^0-9a-z])/i,
     /(^|[^0-9a-z])((?:1pondo[-_\s]?\d{6}[-_]\d{2,4}))(?=$|[^0-9a-z])/i,
     /(^|[^0-9a-z])((?:\d{6}[-_]\d{2,4}[-_\s]?1pon(?:do)?))(?=$|[^0-9a-z])/i,
+    /(^|[^0-9a-z])([a-z]{2,8}[-_\s][a-z]\d{2,6})(?=$|[^0-9a-z])/i,
     /(^|[^0-9a-z])([a-z]{2,8}[-_\s]\d{2,6}(?:[-_]\d{1,3})?)(?:ch)?(?=$|[^0-9a-z])/i,
     /(^|[^0-9a-z])([a-z]{1,8}\d{1,4}[-_]\d{2,6})(?=$|[^0-9a-z])/i,
     /(^|[^0-9a-z])([a-z]{1,8}\d{2,8})(?=$|[^0-9a-z])/i,
@@ -359,14 +362,15 @@ function _extractNfoNumberFromParsed(parsed) {
   return '';
 }
 
-function _nfoFieldsFromParsed(parsed) {
+function _nfoFieldsFromParsed(parsed, movieFile = null) {
   if (!parsed) return null;
   const nfoName = parsed.title ? String(parsed.title) : '';
   const nfoNumber = _extractNfoNumberFromParsed(parsed);
   const nfoRegions = _safeJoinText(parsed.countries);
   const nfoLanguage = _safeJoinText(parsed.languages);
-  const nfoGenres = _safeJoinText(parsed.genres);
-  const nfoTags = _safeJoinText(parsed.tags);
+  const movieTags = movieFile ? addMetaTubeFilenameTags(parsed.tags, movieFile.filename, { isDirectory: !!movieFile.isDirectory, directoryName: movieFile.directoryName }) : parsed.tags;
+  const nfoGenres = _safeJoinText(movieFile ? mergeMovieMetadataGenres(parsed.genres, movieTags) : parsed.genres);
+  const nfoTags = _safeJoinText(movieTags);
   const nfoAlias = _safeJoinText(parsed.aliases);
   const actorsDetailed = Array.isArray(parsed.actorsDetailed) ? parsed.actorsDetailed : [];
   const directorsDetailed = Array.isArray(parsed.directorsDetailed) ? parsed.directorsDetailed : [];
@@ -400,8 +404,8 @@ function _nfoFieldsFromParsed(parsed) {
   };
 }
 
-function buildNfoFieldsFromParsed(parsed) {
-  return _nfoFieldsFromParsed(parsed);
+function buildNfoFieldsFromParsed(parsed, movieFile = null) {
+  return _nfoFieldsFromParsed(parsed, movieFile);
 }
 
 async function findAndParseNfoForVideo(fullPath) {
@@ -1067,7 +1071,7 @@ async function indexMovieFile({ knex, fullPath, dirPath, filename, ext }) {
   }
 
   const { parsed } = await findAndParseNfoForVideo(p);
-  const nfoFields = _nfoFieldsFromParsed(parsed) || {};
+  const nfoFields = _nfoFieldsFromParsed(parsed, { filename, directoryName: path.basename(dirPath) }) || {};
 
   const baseName = path.parse(filename).name;
   const fallbackName = normalizeNameForNfoGuess(moviePart ? moviePart.titleStem : baseName) || (moviePart ? moviePart.titleStem : baseName);
@@ -1176,7 +1180,7 @@ async function indexBdmvFolder({ knex, folderPath, dirPath, filename }) {
   }
 
   const { parsed } = await findAndParseNfoForMovieFolder(folder);
-  const nfoFields = _nfoFieldsFromParsed(parsed) || {};
+  const nfoFields = _nfoFieldsFromParsed(parsed, { filename, isDirectory: true }) || {};
   const fallbackName = normalizeNameForNfoGuess(filename) || filename;
   const nfoName = nfoFields.nfo_name || fallbackName || filename;
 
@@ -1294,7 +1298,7 @@ async function indexVideoTsFolder({ knex, folderPath, dirPath, filename }) {
   }
 
   const { parsed } = await findAndParseNfoForMovieFolder(folder);
-  const nfoFields = _nfoFieldsFromParsed(parsed) || {};
+  const nfoFields = _nfoFieldsFromParsed(parsed, { filename, isDirectory: true }) || {};
   const fallbackName = normalizeNameForNfoGuess(filename) || filename;
   const nfoName = nfoFields.nfo_name || fallbackName || filename;
 

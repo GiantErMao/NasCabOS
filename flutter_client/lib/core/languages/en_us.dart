@@ -407,7 +407,8 @@ class EnUs extends Translations {
           'Are you sure you want to delete this item? Path: @path',
       'video_delete_with_scrape_files':
           'Also delete the related NFO/posters/fanart',
-      'video_delete_movie_part_hint': 'This is one of @count movie parts. The other @rest parts will remain in your library.',
+      'video_delete_movie_part_hint':
+          'This is one of @count movie parts. The other @rest parts will remain in your library.',
       'user_delete_confirm_message':
           'Are you sure you want to delete this user?',
 
@@ -587,19 +588,25 @@ class EnUs extends Translations {
       'media_tool_video_trans_status_stopped': 'Stopped',
       'media_tool_video_trans_status_completed': 'Completed',
       'media_tool_video_trans_validating': 'Validating',
-      'media_tool_video_trans_restart_confirm': 'This task is complete. Restarting will process the source again. Continue?',
+      'media_tool_video_trans_restart_confirm':
+          'This task is complete. Restarting will process the source again. Continue?',
       'media_tool_video_trans_status_error': 'Error',
       'media_tool_video_trans_format_source': 'Same as source',
       'media_tool_video_trans_validation_mode': 'Validation mode',
       'media_tool_video_trans_validation_fast': 'Fast validation',
       'media_tool_video_trans_validation_strict': 'Strict validation',
-      'media_tool_video_trans_replace_source': 'Replace source after completion',
-      'media_tool_video_trans_replace_hint': 'Replace only after validation. Restarting a completed task trims the current source again.',
+      'media_tool_video_trans_replace_source':
+          'Replace source after completion',
+      'media_tool_video_trans_replace_hint':
+          'Replace only after validation. Restarting a completed task trims the current source again.',
       'media_tool_video_trans_trim_start': 'Start time (seconds)',
       'media_tool_video_trans_trim_end': 'End time (seconds)',
-      'media_tool_video_trans_trim_hint': '0–0 disables trimming; end 0 means EOF. Out-of-range videos are skipped.',
-      'media_tool_video_trans_trim_invalid': 'Enter finite non-negative seconds; a non-zero end must exceed the start.',
-      'media_tool_video_trans_trim_animated': 'Trimming does not support WebP/GIF. Switched to same as source.',
+      'media_tool_video_trans_trim_hint':
+          '0–0 disables trimming; end 0 means EOF. Out-of-range videos are skipped.',
+      'media_tool_video_trans_trim_invalid':
+          'Enter finite non-negative seconds; a non-zero end must exceed the start.',
+      'media_tool_video_trans_trim_animated':
+          'Trimming does not support WebP/GIF. Switched to same as source.',
       'media_tool_video_trans_trim_range': 'Trim range',
       'media_tool_video_trans_enabled': 'On',
       'media_tool_video_trans_disabled': 'Off',
@@ -1865,6 +1872,11 @@ class EnUs extends Translations {
       'video_tmdb_page': 'Page @page / @total',
       'video_tmdb_page_single': 'Page @page',
       'video_scrape_auto': 'Auto scrape',
+      'video_nfo_translate': 'Translate',
+      'video_nfo_translating': 'Translating NFO',
+      'video_nfo_translate_done': 'NFO translated and index updated',
+      'video_nfo_translate_skipped': 'NFO is already in Chinese',
+      'video_nfo_translate_failed': 'NFO translation failed. Try again later.',
       'video_scrape_cleanup': 'Cleanup scraped files',
       'video_scrape_cleanup_confirm':
           'All scraped info (posters, fanarts, etc.) under this folder will be removed. Continue?',
@@ -1896,7 +1908,8 @@ class EnUs extends Translations {
       'video_detail_storyline_empty': 'No storyline',
       'video_detail_seasons': 'Seasons',
       'video_detail_movie_parts': 'Movie parts · @count',
-      'video_detail_movie_parts_duration': 'Movie parts · @count · @minutes min',
+      'video_detail_movie_parts_duration':
+          'Movie parts · @count · @minutes min',
       'video_detail_movie_part': 'CD@number',
       'video_detail_movie_part_duration': 'CD@number · @minutes min',
       'video_detail_season_list_title': 'Seasons (@count)',

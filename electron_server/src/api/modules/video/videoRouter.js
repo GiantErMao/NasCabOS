@@ -75,6 +75,7 @@ router.post('/album/index/remove', authenticateJWT, videoAlbumController.removeA
 router.post('/album/cover/set', authenticateJWT, videoAlbumController.setAlbumCover);
 
 router.get('/detail', authenticateJWT, videoDetailController.getDetail);
+router.post('/detail/nfo/translate', authenticateJWT, requireAdmin, videoDetailController.translateNfo);
 router.get('/episodes', authenticateJWT, videoDetailController.getEpisodes);
 router.get('/tvPlayInfo', authenticateJWT, videoDetailController.getTvPlayInfo);
 router.get('/discContents', authenticateJWT, videoDetailController.getDiscContents);

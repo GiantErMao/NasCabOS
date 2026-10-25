@@ -71,6 +71,20 @@ class VideoDetailApiService extends BaseApiService {
     );
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> translateNfo(
+    int indexId, {
+    bool showLoading = true,
+  }) {
+    return apiPost<Map<String, dynamic>>(
+      '/api/video/detail/nfo/translate',
+      body: {'index_id': indexId},
+      timeout: const Duration(minutes: 3),
+      maxRetries: 0,
+      showLoading: showLoading,
+      loadingMsg: 'video_nfo_translating'.tr,
+    );
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> getDiscContents(
     int indexId, {
     bool showLoading = false,
@@ -97,9 +111,9 @@ class VideoDetailApiService extends BaseApiService {
     if (token.isNotEmpty) {
       params['accessToken'] = token;
     }
-    final uri = Uri.parse('${api.baseUrl}/api/video/discContents/thumb').replace(
-      queryParameters: params,
-    );
+    final uri = Uri.parse(
+      '${api.baseUrl}/api/video/discContents/thumb',
+    ).replace(queryParameters: params);
     return uri.toString();
   }
 }

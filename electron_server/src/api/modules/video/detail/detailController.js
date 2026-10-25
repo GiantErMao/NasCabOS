@@ -2,8 +2,20 @@ const ResponseUtil = require('../../../apiUtils/responseUtil');
 const VideoDetailService = require('./detailService');
 const fs = require('fs');
 const path = require('path');
+const { translateMovieNfo } = require('./movieNfoTranslationService');
 
 class VideoDetailController {
+  async translateNfo(req, res) {
+    try {
+      const indexId = Number((req.body || {}).index_id ?? (req.body || {}).indexId);
+      const data = await translateMovieNfo({ knexVideo: req.dbVideo, knexMain: req.dbMain, indexId });
+      return ResponseUtil.success(req, res, data, 'common.SUCCESS', 200);
+    } catch (error) {
+      if (!error.statusCode || error.statusCode >= 500) console.warn('[videoNfoTranslate] failed:', error.message);
+      return ResponseUtil.error(req, res, 'common.ERROR', error.statusCode || 503);
+    }
+  }
+
   async getDetail(req, res) {
     try {
       const uid = req.user && req.user.id ? Number(req.user.id) : 0;

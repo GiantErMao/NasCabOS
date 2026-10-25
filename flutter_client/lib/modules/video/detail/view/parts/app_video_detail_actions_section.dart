@@ -37,6 +37,7 @@ class _AppVideoDetailActionsSectionState
     extends State<AppVideoDetailActionsSection> {
   bool? _isFavorite;
   bool _favoriteLoading = false;
+  bool _translationLoading = false;
 
   void _closeDetailAfterDelete() {
     if (Get.isRegistered<VideoMainController>()) {
@@ -256,11 +257,9 @@ class _AppVideoDetailActionsSectionState
                         'rest': (widget.ctrl.movieParts.length - 1).toString(),
                       }),
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.color
-                            ?.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -363,6 +362,28 @@ class _AppVideoDetailActionsSectionState
       return;
     }
     ToastUtil.show('video_scrape_started'.tr);
+  }
+
+  Future<void> _translateNfo() async {
+    if (_translationLoading || widget.ctrl.indexId <= 0) return;
+    _translationLoading = true;
+    try {
+      final res = await VideoDetailApiService.instance.translateNfo(
+        widget.ctrl.indexId,
+      );
+      if (!res.success) {
+        ToastUtil.show('video_nfo_translate_failed'.tr);
+        return;
+      }
+      if (res.data?['skipped'] == true) {
+        ToastUtil.show('video_nfo_translate_skipped'.tr);
+        return;
+      }
+      await widget.ctrl.refreshDetail(showLoading: false);
+      ToastUtil.show('video_nfo_translate_done'.tr);
+    } finally {
+      _translationLoading = false;
+    }
   }
 
   Future<void> _cleanupScrapeInfo() async {
@@ -684,6 +705,17 @@ class _AppVideoDetailActionsSectionState
               onPressed: _favoriteLoading ? null : _toggleFavorite,
               borderRadius: 12,
             ),
+            if (isMovieLike && CurrentUserController.instance.isAdmin)
+              CustomIconButton(
+                icon: Icons.translate_outlined,
+                tooltip: 'video_nfo_translate'.tr,
+                iconColor: onButton,
+                backgroundColor: buttonBg,
+                buttonSize: 42,
+                iconSize: 21,
+                onPressed: _translationLoading ? null : _translateNfo,
+                borderRadius: 12,
+              ),
             CustomIconButton(
               icon: Icons.more_horiz,
               tooltip: 'video_detail_operation'.tr,

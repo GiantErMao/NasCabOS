@@ -209,6 +209,45 @@ class MetadataTranslateClient {
     return out;
   }
 
+  // Manual NFO translation must fail visibly rather than saving the source text
+  // as if a rate-limited or unavailable translation had succeeded.
+  async translateTextStrict(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    const key = `${this.targetLanguage}\n${raw}`;
+    if (this._cache.has(key)) return this._cache.get(key);
+    const translated = await this.withRateLimit(async () => {
+      const custom = await this.translateByLibreTranslate(raw);
+      if (custom) return custom;
+      if (typeof fetch !== 'function') throw new Error('Translation service unavailable');
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch(this.buildGoogleUrl(raw), {
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+          });
+          if (response.ok) {
+            const result = _extractGoogleTranslateText(await response.json());
+            if (!result) throw new Error('Translation service returned no text');
+            return result;
+          }
+          if (response.status !== 429 && response.status < 500) {
+            throw new Error(`Translation service returned HTTP ${response.status}`);
+          }
+          if (attempt === 1) throw new Error(`Translation service returned HTTP ${response.status}`);
+        } finally {
+          clearTimeout(timer);
+        }
+        await _sleep(1000 * (attempt + 1));
+      }
+      throw new Error('Translation service unavailable');
+    });
+    this._cache.set(key, translated);
+    return translated;
+  }
+
   async translateList(list) {
     const arr = Array.isArray(list) ? list : [];
     const out = [];

@@ -40,6 +40,7 @@ class VideoDetailActionsSection extends StatefulWidget {
 class _VideoDetailActionsSectionState extends State<VideoDetailActionsSection> {
   bool? _isFavorite;
   bool _favoriteLoading = false;
+  bool _translationLoading = false;
 
   String _formatSeconds(int seconds) {
     final d = Duration(seconds: seconds < 0 ? 0 : seconds);
@@ -116,6 +117,26 @@ class _VideoDetailActionsSectionState extends State<VideoDetailActionsSection> {
           _favoriteLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _translateNfo() async {
+    if (_translationLoading || widget.ctrl.indexId <= 0) return;
+    setState(() => _translationLoading = true);
+    try {
+      final res = await VideoDetailApiService.instance.translateNfo(
+        widget.ctrl.indexId,
+      );
+      if (!res.success) {
+        ToastUtil.show('video_nfo_translate_failed'.tr);
+      } else if (res.data?['skipped'] == true) {
+        ToastUtil.show('video_nfo_translate_skipped'.tr);
+      } else {
+        await widget.ctrl.refreshDetail(showLoading: false);
+        ToastUtil.show('video_nfo_translate_done'.tr);
+      }
+    } finally {
+      if (mounted) setState(() => _translationLoading = false);
     }
   }
 
@@ -273,6 +294,21 @@ class _VideoDetailActionsSectionState extends State<VideoDetailActionsSection> {
               ),
               height: 44,
             ),
+            if (isMovieLike && CurrentUserController.instance.isAdmin)
+              CustomButton(
+                text: 'video_nfo_translate'.tr,
+                onPressed: _translationLoading ? null : _translateNfo,
+                isPrimary: false,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  foregroundColor: theme.colorScheme.onSurface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(kActionButtonRadius),
+                  ),
+                ),
+                icon: const Icon(Icons.translate_outlined),
+                height: 44,
+              ),
             _OperationMenu(ctrl: ctrl),
           ],
         ),
@@ -441,11 +477,9 @@ class _OperationMenu extends StatelessWidget {
                           'rest': (ctrl.movieParts.length - 1).toString(),
                         }),
                         style: TextStyle(
-                          color: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.color
-                              ?.withValues(alpha: 0.7),
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                         ),
                       ),
                     ],

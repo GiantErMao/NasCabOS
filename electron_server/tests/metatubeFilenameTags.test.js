@@ -23,12 +23,28 @@ test('preserves tags and avoids duplicates, including dotted disc folders', () =
   assert.deepEqual(addMetaTubeFilenameTags([], 'ABC.123-UC', { isDirectory: true }), ['破解版本', '中文字幕']);
 });
 
+test('uses a movie folder suffix when the video basename has none', () => {
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SHKD-748.mp4', { directoryName: 'SHKD-748-C' }), ['中文字幕']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'IPX-916-UC-Y.mp4', { directoryName: 'IPX-916-UC' }), ['破解版本', '中文字幕']);
+});
+
+test('.ltx after a filename tag does not hide subtitle or uncensored labels', () => {
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586-U.ltx.mp4'), ['破解版本']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586-C.ltx.mp4'), ['中文字幕']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586-UC.LTX.mkv'), ['破解版本', '中文字幕']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586-U.ltx.mp4', { directoryName: 'SSIS-586-C' }), ['破解版本']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586.mp4', { directoryName: 'SSIS-586-UC.ltx' }), ['破解版本', '中文字幕']);
+  assert.deepEqual(addMetaTubeFilenameTags([], 'SSIS-586-U-extra.ltx.mp4'), []);
+});
+
 test('shared MetaTube writer emits both NFO tags and updates the index', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/workers/videoIndex/nfoFetchWorker/nfoFetchRunner.js'), 'utf8');
   const writes = [];
   const updates = [];
   const context = {
     path, addMetaTubeFilenameTags, mergeMovieMetadataGenres, buildMovieNfo,
+    parseMoviePart: () => null,
+    movieMetadataBaseName: filename => path.parse(filename).name,
     _mapMetaTubeMovieToNfo: () => ({ title: 'Title', tags: ['provider'] }),
     writeTextIfChanged: async (target, xml) => writes.push({ target, xml }),
     _updateIndexFromNfoAndArtwork: async args => updates.push(args),
