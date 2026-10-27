@@ -402,7 +402,7 @@ function _safeArtworkFileName(fileName) {
   const ext = path.extname(raw) || '.jpg';
   const base = path.basename(raw, ext);
   const normalized = base.toLowerCase();
-  if (normalized.endsWith('-post') || normalized.endsWith('-poster')) return `poster${ext}`;
+  if (normalized.endsWith('-poster')) return `poster${ext}`;
   if (normalized.endsWith('-fanart')) return `fanart${ext}`;
   if (normalized.endsWith('-logo')) return `logo${ext}`;
 
@@ -746,8 +746,6 @@ class NfoFetchRunner {
     if (number && details.title && String(details.title).trim()) {
       nfoData.title = `${number} ${nfoData.title}`;
     }
-    const baseName = path.parse(filename).name;
-    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
     const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
     const targetDir = isDiscFolderMovie ? movieFolder : dirPath;
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
@@ -755,7 +753,7 @@ class NfoFetchRunner {
 
     const posterUrl = details.cover_url || details.big_cover_url || details.thumb_url || details.big_thumb_url || '';
     const fanartUrl = details.big_thumb_url || details.thumb_url || (Array.isArray(details.preview_images) ? details.preview_images[0] : '') || '';
-    if (posterUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, posterUrl);
+    if (posterUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'poster.jpg' : `${metadataBaseName}-poster.jpg`, posterUrl);
     if (fanartUrl) await _ensureDownloadedJpeg(this.metatube, targetDir, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, fanartUrl);
 
     await _updateIndexFromNfoAndArtwork({
@@ -935,13 +933,11 @@ class NfoFetchRunner {
 
     let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
     nfoData = await this.translateNfoData(nfoData);
-    const baseName = path.parse(filename).name;
-    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
     const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
 
-    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, details.poster_path);
+    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : `${metadataBaseName}-poster.jpg`, details.poster_path);
     if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, details.backdrop_path);
     const logo = _pickLogoPathFromImages(details.images);
     if (logo) {
@@ -1335,13 +1331,11 @@ class NfoFetchRunner {
 
     let nfoData = _mapMovieToNfo({ client: this.tmdb, movie: details });
     nfoData = await this.translateNfoData(nfoData);
-    const baseName = path.parse(filename).name;
-    const moviePart = !isDiscFolderMovie && parseMoviePart(filename);
     const metadataBaseName = isDiscFolderMovie ? '' : movieMetadataBaseName(filename, dirPath);
     const nfoPath = isDiscFolderMovie ? path.join(movieFolder, 'movie.nfo') : path.join(dirPath, `${metadataBaseName}.nfo`);
     await writeTextIfChanged(nfoPath, buildMovieNfo(nfoData));
 
-    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : moviePart ? `${metadataBaseName}-poster.jpg` : `${baseName}-post.jpg`, details.poster_path);
+    if (details.poster_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'poster.jpg' : `${metadataBaseName}-poster.jpg`, details.poster_path);
     if (details.backdrop_path) await _ensureDownloadedJpeg(this.tmdb, isDiscFolderMovie ? movieFolder : dirPath, isDiscFolderMovie ? 'fanart.jpg' : `${metadataBaseName}-fanart.jpg`, details.backdrop_path);
     const logo = _pickLogoPathFromImages(details.images);
     if (logo) {

@@ -159,12 +159,18 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
     HapticFeedback.lightImpact();
   }
 
+  /// Pico 注入到 2D 应用的手柄位移是**整体反向**的：实测右推 dx<0、左推 dx>0，
+  /// 上推 dy>0、下推 dy<0（与相册翻页的结论一致）。hd 变体里取反后，
+  /// 「右推 = 快进」「上推 = 增大」才与物理方向一致。
+  double _flipJoystickDelta(double delta) =>
+      DeviceUtils.isVrFlavor ? -delta : delta;
+
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
     if (!_scrubActive) return;
     _scrubLastGlobalPosition = details.globalPosition;
     final w = MediaQuery.sizeOf(context).width;
     if (w < 1) return;
-    _scrubAccumDx += details.delta.dx;
+    _scrubAccumDx += _flipJoystickDelta(details.delta.dx);
     final totalMs = controller.duration.value.inMilliseconds;
     final seekRangeMs = (totalMs * _maxSeekFractionPerScreen)
         .clamp(0, _maxSeekPerScreen.inMilliseconds)
@@ -233,10 +239,11 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
     if (!_verticalDragActive) return;
     final h = MediaQuery.sizeOf(context).height;
     if (h < 1) return;
-    _verticalDragValue = (_verticalDragValue - details.delta.dy / h).clamp(
-      0.0,
-      1.0,
-    );
+    _verticalDragValue =
+        (_verticalDragValue - _flipJoystickDelta(details.delta.dy) / h).clamp(
+          0.0,
+          1.0,
+        );
     final method = _verticalDragControlsBrightness
         ? 'setBrightness'
         : 'setVolume';

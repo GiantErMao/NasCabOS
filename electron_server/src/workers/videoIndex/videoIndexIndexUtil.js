@@ -26,7 +26,7 @@ const _POSTER_BASE_NAMES = ['poster', 'folder', 'cover', 'front', 'movie'];
 const _FANART_BASE_NAMES = ['fanart', 'backdrop', 'background', 'landscape', 'back'];
 const _LOGO_BASE_NAMES = ['logo', 'clearlogo'];
 
-const _ARTWORK_SUFFIXES = ['poster', 'post', 'thumb', 'fanart', 'logo', 'clearlogo'];
+const _ARTWORK_SUFFIXES = ['poster', 'thumb', 'fanart', 'logo', 'clearlogo'];
 
 function isArtworkFilePath(p) {
   const full = String(p || '');
@@ -157,7 +157,7 @@ async function resolveArtworkPaths({ baseDir, searchDir, current = null, videoBa
     const curPosterIsShowLevelGeneric = !!res.poster_path && path.dirname(res.poster_path) === '.' && _POSTER_BASE_NAMES.includes(curPosterBase);
     if (!res.poster_path || curPosterIsShowLevelGeneric) {
       const posterCandidates = restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES];
-      if (videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase);
+      if (videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-thumb`, videoBase);
       const hit = findFirstMatch(posterCandidates);
       if (hit) res.poster_path = makeRel(hit);
     }
@@ -165,11 +165,11 @@ async function resolveArtworkPaths({ baseDir, searchDir, current = null, videoBa
 
   if (!res.poster_path) {
     const posterCandidates = videoAliases.length > 0
-      ? [`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase,
+      ? [`${videoBase}-poster`, `${videoBase}-thumb`, videoBase,
         ...(restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES]),
-        ...videoAliases.flatMap(alias => [`${alias}-poster`, `${alias}-post`, `${alias}-thumb`, alias])]
+        ...videoAliases.flatMap(alias => [`${alias}-poster`, `${alias}-thumb`, alias])]
       : (restrictToVideoBase ? [] : [..._POSTER_BASE_NAMES]);
-    if (videoAliases.length === 0 && videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-post`, `${videoBase}-thumb`, videoBase);
+    if (videoAliases.length === 0 && videoBase) posterCandidates.push(`${videoBase}-poster`, `${videoBase}-thumb`, videoBase);
     const hit = findFirstMatch(posterCandidates);
     if (hit) res.poster_path = makeRel(hit);
   }

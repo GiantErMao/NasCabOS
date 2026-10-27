@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 VideoHomeItemBean movie({
   String source = 'metatube',
   String type = 'movie',
-  String poster = '/media/movie-post.jpg',
+  String poster = '/media/movie-poster.jpg',
   String fanart = '/media/movie-fanart.jpg',
 }) => VideoHomeItemBean.fromJson({
   'media_type': type,
@@ -15,29 +15,29 @@ VideoHomeItemBean movie({
 });
 
 void main() {
-  test('MetaTube movie cards use fanart and details use poster', () {
+  test('movie cards use poster and details use fanart', () {
     final item = movie();
-    expect(VideoUtils.getCardImagePath(item), '/media/movie-fanart.jpg');
-    expect(VideoUtils.getDetailImagePath(item), '/media/movie-post.jpg');
-    expect(VideoUtils.getLargeCardImagePath(item), '/media/movie-post.jpg');
+    expect(VideoUtils.getCardImagePath(item), '/media/movie-poster.jpg');
+    expect(VideoUtils.getDetailImagePath(item), '/media/movie-fanart.jpg');
+    expect(VideoUtils.getLargeCardImagePath(item), '/media/movie-poster.jpg');
   });
 
   test('ordinary movies and television retain their artwork rules', () {
     for (final item in [movie(source: ''), movie(type: 'tv')]) {
-      expect(VideoUtils.getCardImagePath(item), '/media/movie-post.jpg');
+      expect(VideoUtils.getCardImagePath(item), '/media/movie-poster.jpg');
       expect(VideoUtils.getDetailImagePath(item), '/media/movie-fanart.jpg');
     }
   });
 
-  test('disc movies use the MetaTube rule', () {
+  test('disc movies use the Jellyfin artwork rule', () {
     for (final type in ['bdmv', 'video_ts']) {
       expect(
         VideoUtils.getCardImagePath(movie(type: type)),
-        '/media/movie-fanart.jpg',
+        '/media/movie-poster.jpg',
       );
       expect(
         VideoUtils.getDetailImagePath(movie(type: type)),
-        '/media/movie-post.jpg',
+        '/media/movie-fanart.jpg',
       );
     }
   });
@@ -45,10 +45,14 @@ void main() {
   test('missing preferred artwork falls back to the other image', () {
     expect(
       VideoUtils.getCardImagePath(movie(fanart: '')),
-      '/media/movie-post.jpg',
+      '/media/movie-poster.jpg',
     );
     expect(
       VideoUtils.getDetailImagePath(movie(poster: '')),
+      '/media/movie-fanart.jpg',
+    );
+    expect(
+      VideoUtils.getCardImagePath(movie(poster: '')),
       '/media/movie-fanart.jpg',
     );
     expect(VideoUtils.getCardImagePath(movie(poster: '', fanart: '')), '');

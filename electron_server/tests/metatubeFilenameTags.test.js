@@ -41,11 +41,13 @@ test('shared MetaTube writer emits both NFO tags and updates the index', async (
   const source = fs.readFileSync(path.join(__dirname, '../src/workers/videoIndex/nfoFetchWorker/nfoFetchRunner.js'), 'utf8');
   const writes = [];
   const updates = [];
+  const downloads = [];
   const context = {
     path, addMetaTubeFilenameTags, mergeMovieMetadataGenres, buildMovieNfo,
     parseMoviePart: () => null,
     movieMetadataBaseName: filename => path.parse(filename).name,
     _mapMetaTubeMovieToNfo: () => ({ title: 'Title', tags: ['provider'] }),
+    _ensureDownloadedJpeg: async (_client, targetDir, fileName) => downloads.push({ targetDir, fileName }),
     writeTextIfChanged: async (target, xml) => writes.push({ target, xml }),
     _updateIndexFromNfoAndArtwork: async args => updates.push(args),
   };
@@ -53,7 +55,7 @@ test('shared MetaTube writer emits both NFO tags and updates the index', async (
   vm.runInContext('this.runner = {' + source.slice(source.indexOf('  async _writeMetaTubeMovieRow('), source.indexOf('  async _processMovieRowByMetaTube(')) + '}', context);
   context.runner.translateNfoData = async data => data;
   for (const media_type of ['movie', 'bdmv', 'video_ts']) {
-    await context.runner._writeMetaTubeMovieRow({ path: '/videos', filename: media_type === 'movie' ? 'ABC-123-UC.mkv' : 'ABC.123-UC', media_type }, { number: 'ABC-123', title: 'Title' });
+    await context.runner._writeMetaTubeMovieRow({ path: '/videos', filename: media_type === 'movie' ? 'ABC-123-UC.mkv' : 'ABC.123-UC', media_type }, { number: 'ABC-123', title: 'Title', cover_url: '/cover.jpg', thumb_url: '/fanart.jpg' });
   }
   assert.equal(writes.length, 3);
   for (const { xml } of writes) {
@@ -64,6 +66,14 @@ test('shared MetaTube writer emits both NFO tags and updates the index', async (
     assert.match(xml, /<genre>破解版本<\/genre>/);
   }
   assert.equal(updates.length, 3);
+  assert.deepEqual(downloads.map(item => item.fileName), [
+    'ABC-123-UC-poster.jpg',
+    'ABC-123-UC-fanart.jpg',
+    'poster.jpg',
+    'fanart.jpg',
+    'poster.jpg',
+    'fanart.jpg',
+  ]);
 });
 
 

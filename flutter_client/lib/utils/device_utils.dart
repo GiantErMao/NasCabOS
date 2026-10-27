@@ -8,6 +8,18 @@ class DeviceUtils {
   static const double phoneBreakpoint = 600;
   static const double desktopBreakpoint = 600;
 
+  /// 当前是否是 hd 变体（Pico VR 大屏包）。
+  ///
+  /// Pico 对普通 2D 应用不提供按键与摇杆轴，只喂一条虚拟触摸屏位移流，
+  /// 且注入的位移是**整体反向**的（实测：右推 dx<0、左推 dx>0；上推 dy>0、下推 dy<0）。
+  /// 所以 hd 包里的位移手势都要取反才跟手：
+  /// 相册翻页、播放器播放进度（横向）与音量/亮度（纵向）。
+  ///
+  /// 变体名由 build_flavor.sh 通过 `--dart-define=FLAVOR` 编译进来。
+  /// 刻意**不按宽度判定**：≥600dp 的平板与横屏手机也会落进那个范围，
+  /// 它们的翻页与进度本来就由 PageView / 真实触摸的滑动手势负责，取反就错了。
+  static const bool isVrFlavor = String.fromEnvironment('FLAVOR') == 'hd';
+
   static double _webLogicalWidth() {
     try {
       final views = WidgetsBinding.instance.platformDispatcher.views;

@@ -24,7 +24,6 @@ function candidatesForGroup(dir, baseNames) {
     nfo.push(path.join(dir, `${base}.nfo`));
     for (const ext of IMAGE_EXTENSIONS) {
       poster.push(path.join(dir, `${base}-poster${ext}`));
-      poster.push(path.join(dir, `${base}-post${ext}`));
       poster.push(path.join(dir, `${base}-thumb${ext}`));
       fanart.push(path.join(dir, `${base}-fanart${ext}`));
       logo.push(path.join(dir, `${base}-logo${ext}`));
@@ -66,7 +65,7 @@ async function main() {
     for (const kind of Object.keys(sources)) {
       const canonicalSuffixes = {
         nfo: [''],
-        poster: ['-poster', '-post', '-thumb'],
+        poster: ['-poster', '-thumb'],
         fanart: ['-fanart'],
         logo: ['-logo', '-clearlogo'],
       }[kind];

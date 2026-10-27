@@ -2,19 +2,9 @@ import '../../../../core/api/api_controller.dart';
 import '../beans/video_item_bean.dart';
 
 class VideoUtils {
-  static bool isMetaTubeMovie(VideoHomeItemBean item) {
-    final mediaType = item.mediaType.trim().toLowerCase();
-    return item.nfoSource.trim().toLowerCase() == 'metatube' &&
-        (mediaType == 'movie' ||
-            mediaType == 'bdmv' ||
-            mediaType == 'video_ts');
-  }
-
   static String getCardImagePath(VideoHomeItemBean item) {
-    if (isMetaTubeMovie(item) && item.fanartPath.trim().isNotEmpty) {
-      return item.fanartPath.trim();
-    }
-    return item.posterPath.trim();
+    final poster = item.posterPath.trim();
+    return poster.isNotEmpty ? poster : item.fanartPath.trim();
   }
 
   static String getPosterUrl(VideoHomeItemBean item, {int? size}) {
@@ -40,13 +30,10 @@ class VideoUtils {
   }
 
   static String getLargeCardImagePath(VideoHomeItemBean item) {
-    return item.posterPath.trim();
+    return getCardImagePath(item);
   }
 
   static String getDetailImagePath(VideoHomeItemBean item) {
-    if (isMetaTubeMovie(item) && item.posterPath.trim().isNotEmpty) {
-      return item.posterPath.trim();
-    }
     final fanart = item.fanartPath.trim();
     return fanart.isNotEmpty ? fanart : item.posterPath.trim();
   }

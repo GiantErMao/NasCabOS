@@ -16,13 +16,8 @@ import 'live_photo_inline_player.dart';
 import 'panorama_gallery_page.dart';
 
 /// 只有 hd 变体（Pico VR 大屏包）才启用「手柄位移翻页」。
-///
-/// 这里刻意**不按宽度判定**：宽度 ≥600dp 的平板、横屏手机也会落进那个范围，
-/// 而它们的翻页本来就由 PageView 自己的滑动手势负责，再叠一条位移判定就会
-/// 「滑一下翻两张」。hd / regular 两个变体是分别出包的，按变体判定才准确
-/// （FLAVOR 由 build_flavor.sh 通过 --dart-define 编译进来）。
-const bool _vrPointerNavigationEnabled =
-    String.fromEnvironment('FLAVOR') == 'hd';
+/// 判定细节见 [DeviceUtils.isVrFlavor]。
+const bool _vrPointerNavigationEnabled = DeviceUtils.isVrFlavor;
 
 class CustomGallery extends StatefulWidget {
   const CustomGallery({super.key});
