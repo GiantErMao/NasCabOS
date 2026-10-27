@@ -20,6 +20,10 @@ import '../../../utils/toast_util.dart';
 import '../../../utils/device_utils.dart';
 
 class CustomGalleryController extends GetxController {
+  static const MethodChannel _galleryControllerChannel = MethodChannel(
+    'com.nascabos/gallery_controller',
+  );
+
   static CustomGalleryController get instance =>
       Get.find<CustomGalleryController>();
 
@@ -76,11 +80,14 @@ class CustomGalleryController extends GetxController {
   // 双击缩放比例
   final List<double> doubleTapScales = [1.0, 3.0];
 
+  /// 判定「已放大」的容差：留 1% 余量，避免手势回弹时的 1.0001 被当成放大
+  static const double zoomedScaleEpsilon = 1.01;
+
   // Track rotation for each image index
   final RxMap<int, int> rotations = <int, int>{}.obs;
 
   // Track scale state for each image index
-  final RxMap<int, double> scales = <int, double>{}.obs;
+  final Map<int, double> scales = <int, double>{};
   final RxMap<int, bool> panoramaCandidates = <int, bool>{}.obs;
   final Set<int> _panoramaDetectionInFlight = <int>{};
 
@@ -118,6 +125,14 @@ class CustomGalleryController extends GetxController {
 
     // 监听键盘事件
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    if (!kIsWeb && GetPlatform.isAndroid) {
+      _galleryControllerChannel.setMethodCallHandler(_handleControllerInput);
+      unawaited(
+        _galleryControllerChannel.invokeMethod<void>('setActive', {
+          'active': true,
+        }),
+      );
+    }
   }
 
   @override
@@ -126,7 +141,25 @@ class CustomGalleryController extends GetxController {
     pageController.dispose();
     _stopAutoPlay();
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    if (!kIsWeb && GetPlatform.isAndroid) {
+      unawaited(
+        _galleryControllerChannel.invokeMethod<void>('setActive', {
+          'active': false,
+        }),
+      );
+      _galleryControllerChannel.setMethodCallHandler(null);
+    }
     super.onClose();
+  }
+
+  Future<void> _handleControllerInput(MethodCall call) async {
+    if (call.method != 'horizontal') return;
+    final direction = call.arguments as int? ?? 0;
+    if (direction < 0) {
+      previousImage();
+    } else if (direction > 0) {
+      nextImage();
+    }
   }
 
   /// 设置图片浏览器的图片列表
@@ -205,18 +238,21 @@ class CustomGalleryController extends GetxController {
     final enabled =
         CacheManager().getBool(CacheKeys.photoPreviewWifiOriginal) ?? false;
     if (!enabled) return;
-    Connectivity().checkConnectivity().then((result) {
-      _wifiOriginalEnabled = result.any(
-        (r) =>
-            r == ConnectivityResult.wifi ||
-            r == ConnectivityResult.ethernet ||
-            r == ConnectivityResult.other ||
-            r == ConnectivityResult.vpn,
-      );
-      if (_wifiOriginalEnabled && _galleryItems.isNotEmpty) {
-        _applyWifiOriginalToAllItems();
-      }
-    }).catchError((_) {});
+    Connectivity()
+        .checkConnectivity()
+        .then((result) {
+          _wifiOriginalEnabled = result.any(
+            (r) =>
+                r == ConnectivityResult.wifi ||
+                r == ConnectivityResult.ethernet ||
+                r == ConnectivityResult.other ||
+                r == ConnectivityResult.vpn,
+          );
+          if (_wifiOriginalEnabled && _galleryItems.isNotEmpty) {
+            _applyWifiOriginalToAllItems();
+          }
+        })
+        .catchError((_) {});
   }
 
   void _applyWifiOriginalToAllItems() {
@@ -288,6 +324,19 @@ class CustomGalleryController extends GetxController {
     return scales[index] ?? 1.0;
   }
 
+  /// 记录手势产生的实时缩放比例（双击 / 捏合都会回调到这里）。
+  /// 只更新 [scales] 不触发 rebuild：rebuild 会重建手势并把缩放中心拉回图片中心。
+  void onGestureDetailsChanged(int index, GestureDetails? details) {
+    final scale = details?.totalScale;
+    if (scale == null || !scale.isFinite || scale <= 0) return;
+    scales[index] = scale;
+  }
+
+  /// 当前图是否处于放大状态。
+  /// 放大时拖动/点击属于图片自身的平移操作，翻页手势必须让位，否则手指一拖就翻页。
+  bool get isCurrentImageZoomed =>
+      getScale(currentIndex.value) > zoomedScaleEpsilon;
+
   /// 设置图片的缩放比例
   void setScale(int index, double scale) {
     scales[index] = scale;
@@ -299,8 +348,9 @@ class CustomGalleryController extends GetxController {
     // 获取双击位置（可能为null，需要处理）
     final pointerDownPosition = state.pointerDownPosition;
 
-    // 获取当前缩放比例
-    final double currentScale = getScale(index);
+    // Read the live gesture scale; rebuilding from the Rx cache would recenter it.
+    final double currentScale =
+        state.gestureDetails?.totalScale ?? getScale(index);
 
     // 确定目标缩放比例
     double endScale;
@@ -316,8 +366,9 @@ class CustomGalleryController extends GetxController {
       doubleTapPosition: pointerDownPosition,
     );
 
-    // 更新缩放状态
-    setScale(index, endScale);
+    // Keep the scale for later rebuilds without notifying Obx now. A rebuild here
+    // recreates the gesture with centered alignment and loses the tapped focal point.
+    scales[index] = endScale;
   }
 
   /// 切换控件显示/隐藏
@@ -848,8 +899,27 @@ class CustomGalleryController extends GetxController {
     return ApiController.instance.getVideoStreamMp4Url(livePath);
   }
 
+  /// 键盘（含原生 DPAD/摇杆）接管开关。
+  /// 键盘事件是注册在 HardwareKeyboard 上的全局处理器，覆盖在上面的路由（如全景页）
+  /// 也会被它抢走按键，所以打开全景页时必须先关掉，pop 后再恢复。
+  bool _keyNavigationEnabled = true;
+
+  /// 打开/关闭键盘与原生 DPAD、摇杆的事件接管
+  void setKeyNavigationActive(bool active) {
+    if (_keyNavigationEnabled == active) return;
+    _keyNavigationEnabled = active;
+    if (!kIsWeb && GetPlatform.isAndroid) {
+      unawaited(
+        _galleryControllerChannel.invokeMethod<void>('setActive', {
+          'active': active,
+        }),
+      );
+    }
+  }
+
   /// 处理键盘事件
   bool _handleKeyEvent(KeyEvent event) {
+    if (!_keyNavigationEnabled) return false;
     if (event is KeyDownEvent) {
       if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
         previousImage();

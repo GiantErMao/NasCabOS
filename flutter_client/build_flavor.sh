@@ -31,7 +31,10 @@ FLUTTER="${FLUTTER:-/Users/ermao/Env/flutter/bin/flutter}"
 
 echo "==> flutter build apk --release --flavor $FLAVOR${BUILD_NUMBER:+ --build-number=$BUILD_NUMBER}"
 # --android-skip-build-dependency-validation：本机 Gradle 8.12 < Flutter 要求的 8.14，必带
-"$FLUTTER" build apk --release --flavor "$FLAVOR" --android-skip-build-dependency-validation \
+# --dart-define=FLAVOR：把变体名编译进 Dart 常量，供运行时区分
+# （hd 包才启用 Pico 手柄位移翻页，regular 手机版一律不走那条路径）
+"$FLUTTER" build apk --release --flavor "$FLAVOR" --dart-define=FLAVOR="$FLAVOR" \
+  --android-skip-build-dependency-validation \
   ${BUILD_NUMBER:+--build-number="$BUILD_NUMBER"}
 
 echo "==> 产物: build/app/outputs/flutter-apk/app-${FLAVOR}-release.apk"
