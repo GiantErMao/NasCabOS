@@ -460,6 +460,8 @@ class _AppVideoDetailActionsSectionState
     final theme = Theme.of(context);
     final isAdmin = CurrentUserController.instance.isAdmin;
     final canEditOpenSkip = isAdmin && widget.ctrl.canEditOpenSkip;
+    final mediaType = (m['media_type']?.toString() ?? '').trim().toLowerCase();
+    final isMovieLike = ['movie', 'bdmv', 'video_ts'].contains(mediaType);
     final downloadTarget = _resolveDownloadPath(m);
     final browseTarget = _resolveBrowsePath(m);
     final deleteTarget = _resolveDeletePath(m);
@@ -505,6 +507,18 @@ class _AppVideoDetailActionsSectionState
                   _searchMedia();
                 },
               ),
+              if (isMovieLike)
+                ListTile(
+                  leading: const Icon(Icons.translate_outlined, size: 22),
+                  title: Text('video_nfo_translate'.tr),
+                  enabled: !_translationLoading,
+                  onTap: _translationLoading
+                      ? null
+                      : () async {
+                          Navigator.of(ctx).pop();
+                          await _translateNfo();
+                        },
+                ),
               if (canEditOpenSkip)
                 ListTile(
                   leading: const Icon(Icons.skip_next_outlined, size: 22),
@@ -705,17 +719,6 @@ class _AppVideoDetailActionsSectionState
               onPressed: _favoriteLoading ? null : _toggleFavorite,
               borderRadius: 12,
             ),
-            if (isMovieLike && CurrentUserController.instance.isAdmin)
-              CustomIconButton(
-                icon: Icons.translate_outlined,
-                tooltip: 'video_nfo_translate'.tr,
-                iconColor: onButton,
-                backgroundColor: buttonBg,
-                buttonSize: 42,
-                iconSize: 21,
-                onPressed: _translationLoading ? null : _translateNfo,
-                borderRadius: 12,
-              ),
             CustomIconButton(
               icon: Icons.more_horiz,
               tooltip: 'video_detail_operation'.tr,

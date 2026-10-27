@@ -504,3 +504,9 @@ APK 详情页的类型/地区链接此前调用桌面 `VideoMainController` 浮�
 APK `1.2.7 (2059)` 已签名并通过 16 KiB 对齐检查，覆盖安装至 `e6fc7cb7`，版本核对正确。实机点击详情“中文字幕”打开“风格-中文字幕”列表，UI 树显示匹配电影，返回原详情正常。未触发刮削或修改服务端。
 
 产物：`flutter_client/build/app/outputs/flutter-apk/app-release-arm64-v2059-signed.apk`，SHA-256：`1fe47c62ed67202e995a128e9ee0fb5ee7b66e0ffe3ec11d6135acd20994f7c0`，沿用已有内部测试签名。
+
+## 手动 NFO 翻译菜单发布（2026-10-26，2068）
+
+核对远端 `ermao@ddns.ermao.fun:13122` 的手动翻译相关八个服务端文件，均已与提交 `e99afc5d7` 一致，未重复覆盖或重启服务。翻译接口认证保护、远端语法及中文跳过样例检查通过，30 项服务端回归测试通过；当前代码已补做自定义镜像和归档备份。Android regular arm64 APK `1.2.7 (2068)` 已成功覆盖安装至 `e6fc7cb7`，手机和桌面源码中的翻译入口已移至“…”菜单。没有发布 Web、Harmony 或 TV 客户端，没有触发实际翻译或刮削。
+
+文件清单、镜像、APK 哈希和验证详情见 [手动 NFO 翻译菜单发布记录](MANUAL_NFO_TRANSLATION_MENU_RELEASE_20261026.md)。

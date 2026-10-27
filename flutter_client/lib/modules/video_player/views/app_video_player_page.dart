@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -20,6 +22,12 @@ class AppVideoPlayerPage extends StatefulWidget {
 }
 
 class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
+  static const MethodChannel _mobileControlsChannel = MethodChannel(
+    'com.nascabos/mobile_player_controls',
+  );
+  static const double _maxSeekFractionPerScreen = 0.25;
+  static const Duration _maxSeekPerScreen = Duration(minutes: 10);
+
   late final PlayerController controller;
   bool _isControllerCreated = false;
   bool _handlingBack = false;
@@ -33,10 +41,32 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
   Duration? _scrubPreview;
   Offset? _scrubLastGlobalPosition;
 
+  bool _verticalDragActive = false;
+  bool _verticalDragControlsBrightness = false;
+  double _verticalDragValue = 0.5;
+  double _brightnessValue = 0.5;
+  double _systemVolumeValue = 0.5;
+  IconData? _verticalDragIcon;
+
   @override
   void initState() {
     super.initState();
     _initController();
+    _loadMobileControlValues();
+  }
+
+  Future<void> _loadMobileControlValues() async {
+    if (!DeviceUtils.isMobile) return;
+    try {
+      final values = await Future.wait<num?>([
+        _mobileControlsChannel.invokeMethod<num>('getBrightness'),
+        _mobileControlsChannel.invokeMethod<num>('getVolume'),
+      ]);
+      _brightnessValue = (values[0]?.toDouble() ?? 0.5).clamp(0.0, 1.0);
+      _systemVolumeValue = (values[1]?.toDouble() ?? 0.5).clamp(0.0, 1.0);
+    } on PlatformException {
+      // 非 Android 平台或通道尚未就绪时沿用安全默认值。
+    }
   }
 
   void _initController() {
@@ -83,6 +113,13 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
 
   @override
   void dispose() {
+    if (DeviceUtils.isMobile) {
+      unawaited(
+        _mobileControlsChannel
+            .invokeMethod<void>('resetBrightness')
+            .catchError((_) {}),
+      );
+    }
     if (_isControllerCreated && Get.isRegistered<PlayerController>()) {
       controller.setCtrlSpeedBoost(false);
       Get.delete<PlayerController>(force: true);
@@ -129,7 +166,10 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
     if (w < 1) return;
     _scrubAccumDx += details.delta.dx;
     final totalMs = controller.duration.value.inMilliseconds;
-    final deltaMs = (_scrubAccumDx / w * totalMs).round();
+    final seekRangeMs = (totalMs * _maxSeekFractionPerScreen)
+        .clamp(0, _maxSeekPerScreen.inMilliseconds)
+        .round();
+    final deltaMs = (_scrubAccumDx / w * seekRangeMs).round();
     final ms = (_scrubOrigin.inMilliseconds + deltaMs).clamp(0, totalMs);
     setState(() => _scrubPreview = Duration(milliseconds: ms));
   }
@@ -137,7 +177,8 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
   /// 手指是否在顶部 25% 取消区内（相对播放器全屏区域）
   bool _isPointerInScrubCancelZone(Offset? global) {
     if (global == null) return false;
-    final box = _scrubLayoutKey.currentContext?.findRenderObject() as RenderBox?;
+    final box =
+        _scrubLayoutKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize || !box.attached) return false;
     final local = box.globalToLocal(global);
     final h = box.size.height;
@@ -169,6 +210,96 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
 
   void _onHorizontalDragCancel() {
     _endScrub(applySeek: false);
+  }
+
+  void _onVerticalDragStart(DragStartDetails details) {
+    if (controller.isLocked.value) return;
+    final size = MediaQuery.sizeOf(context);
+    if (size.width < 1 || size.height < 1) return;
+    _verticalDragControlsBrightness = details.localPosition.dx < size.width / 2;
+    _verticalDragValue = _verticalDragControlsBrightness
+        ? _brightnessValue
+        : _systemVolumeValue;
+    _verticalDragActive = true;
+    setState(() {
+      _verticalDragIcon = _verticalDragControlsBrightness
+          ? Icons.brightness_6_rounded
+          : Icons.volume_up_rounded;
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    if (!_verticalDragActive) return;
+    final h = MediaQuery.sizeOf(context).height;
+    if (h < 1) return;
+    _verticalDragValue = (_verticalDragValue - details.delta.dy / h).clamp(
+      0.0,
+      1.0,
+    );
+    final method = _verticalDragControlsBrightness
+        ? 'setBrightness'
+        : 'setVolume';
+    if (_verticalDragControlsBrightness) {
+      _brightnessValue = _verticalDragValue;
+    } else {
+      _systemVolumeValue = _verticalDragValue;
+    }
+    unawaited(
+      _mobileControlsChannel
+          .invokeMethod<void>(method, {'value': _verticalDragValue})
+          .catchError((_) {}),
+    );
+    setState(() {});
+  }
+
+  void _endVerticalDrag() {
+    if (!_verticalDragActive) return;
+    _verticalDragActive = false;
+    HapticFeedback.selectionClick();
+    setState(() => _verticalDragIcon = null);
+  }
+
+  Widget _buildVerticalDragOverlay() {
+    final icon = _verticalDragIcon;
+    if (icon == null) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: Center(
+        child: Container(
+          width: 150,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          decoration: BoxDecoration(
+            color: const Color(0xCC0D0D0D),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 30),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: _verticalDragValue,
+                minHeight: 5,
+                borderRadius: BorderRadius.circular(3),
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                color: const Color(0xFF448AFF),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${(_verticalDragValue * 100).round()}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _onWillPop() async {
@@ -311,9 +442,7 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
                             widthFactor: progress.clamp(0.0, 1.0),
                             heightFactor: 1,
                             alignment: Alignment.centerLeft,
-                            child: const ColoredBox(
-                              color: Color(0xFF448AFF),
-                            ),
+                            child: const ColoredBox(color: Color(0xFF448AFF)),
                           ),
                         ],
                       ),
@@ -410,12 +539,17 @@ class _AppVideoPlayerPageState extends State<AppVideoPlayerPage> {
                 onHorizontalDragUpdate: _onHorizontalDragUpdate,
                 onHorizontalDragEnd: _onHorizontalDragEnd,
                 onHorizontalDragCancel: _onHorizontalDragCancel,
+                onVerticalDragStart: _onVerticalDragStart,
+                onVerticalDragUpdate: _onVerticalDragUpdate,
+                onVerticalDragEnd: (_) => _endVerticalDrag(),
+                onVerticalDragCancel: _endVerticalDrag,
                 child: Stack(
                   key: _scrubLayoutKey,
                   fit: StackFit.expand,
                   children: [
                     _buildPlayerStack(context),
                     _buildMobileScrubOverlay(),
+                    _buildVerticalDragOverlay(),
                   ],
                 ),
               )

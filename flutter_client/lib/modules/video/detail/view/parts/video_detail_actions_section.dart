@@ -294,22 +294,10 @@ class _VideoDetailActionsSectionState extends State<VideoDetailActionsSection> {
               ),
               height: 44,
             ),
-            if (isMovieLike && CurrentUserController.instance.isAdmin)
-              CustomButton(
-                text: 'video_nfo_translate'.tr,
-                onPressed: _translationLoading ? null : _translateNfo,
-                isPrimary: false,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  foregroundColor: theme.colorScheme.onSurface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(kActionButtonRadius),
-                  ),
-                ),
-                icon: const Icon(Icons.translate_outlined),
-                height: 44,
-              ),
-            _OperationMenu(ctrl: ctrl),
+            _OperationMenu(
+              ctrl: ctrl,
+              onTranslateNfo: _translationLoading ? null : _translateNfo,
+            ),
           ],
         ),
         if (showProgress) ...[
@@ -358,7 +346,9 @@ class _VideoDetailActionsSectionState extends State<VideoDetailActionsSection> {
 class _OperationMenu extends StatelessWidget {
   final VideoDetailController ctrl;
 
-  const _OperationMenu({required this.ctrl});
+  final Future<void> Function()? onTranslateNfo;
+
+  const _OperationMenu({required this.ctrl, required this.onTranslateNfo});
 
   @override
   Widget build(BuildContext context) {
@@ -673,6 +663,10 @@ class _OperationMenu extends StatelessWidget {
           searchMedia();
           return;
         }
+        if (v == 'translate_nfo') {
+          await onTranslateNfo?.call();
+          return;
+        }
         if (v == 'open_skip') {
           await editOpenSkip();
           return;
@@ -708,6 +702,12 @@ class _OperationMenu extends StatelessWidget {
               value: 'search_media',
               child: Text('video_search_media_info'.tr),
             ),
+            if (isMovieLike)
+              PopupMenuItem(
+                value: 'translate_nfo',
+                enabled: onTranslateNfo != null,
+                child: Text('video_nfo_translate'.tr),
+              ),
             if (canEditOpenSkip)
               PopupMenuItem(
                 value: 'open_skip',
