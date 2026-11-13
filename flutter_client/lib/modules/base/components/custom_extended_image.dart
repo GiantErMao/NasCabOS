@@ -323,10 +323,12 @@ bool _isTinyUrl(String url) {
   }
 }
 
-/// 缩略图 404 重试配置：服务端可能返回 404 但后台正在异步生成缩略图，
-/// 需要指数退避重试等待生成完成。
-const int _kTiny404MaxRetries = 5;
-const Duration _kTiny404InitialDelay = Duration(milliseconds: 500);
+/// Large video thumbnails are generated in a bounded background queue. Keep
+/// polling while the item remains visible, with a capped interval and a finite
+/// deadline so real failures eventually show the error placeholder.
+const Duration _kTinyPendingInitialDelay = Duration(milliseconds: 500);
+const Duration _kTinyPendingMaxDelay = Duration(seconds: 8);
+const Duration _kTinyPendingMaxWait = Duration(minutes: 5);
 
 /// Web 端 tiny 图片的内存缓存，仅用于直连 tiny（/api/file/tiny?aes=xxx）。
 /// 最大占用约 200MB，先进先出。
@@ -497,11 +499,12 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
   CancellationToken? _nonWebDirectCancelToken;
   Completer<void>? _p2pCancelCompleter;
 
-  /// 缩略图 404 重试计数，URL 变化时重置
-  int _tiny404RetryCount = 0;
+  /// Pending thumbnail retry count, reset when the URL changes.
+  int _tinyPendingRetryCount = 0;
+  int? _tinyPendingStartedAtMs;
 
-  /// 缩略图 404 重试定时器，dispose 时取消
-  Timer? _tiny404RetryTimer;
+  /// Pending thumbnail retry timer, cancelled when the widget is disposed.
+  Timer? _tinyPendingRetryTimer;
 
   /// 获取认证头信息
   Map<String, String> _getHeaders() {
@@ -760,7 +763,7 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
       return;
     }
     // Web：直连一律走字节加载（tiny 用 tiny 缓存，非 tiny 用通用缓存）
-    // 非 Web：开启 cache 时走字节加载 + 通用内存缓存（含 tiny），以支持 404 重试
+    // 非 Web：开启 cache 时走字节加载 + 通用内存缓存（含 tiny），以支持等待生成重试
     final useDirectBytes = kIsWeb || widget.cache;
     if (!useDirectBytes) {
       _directBytesFuture = null;
@@ -775,16 +778,26 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
     _directBytesFuture = CustomExtendedImage.getOrCreateLoadFuture(url);
   }
 
-  /// 缩略图 404 重试：指数退避，最多 [_kTiny404MaxRetries] 次。
-  /// 仅对当前可见的组件生效，dispose 时自动取消定时器。
-  /// 返回 true 表示已安排重试，返回 false 表示重试次数已耗尽。
-  bool _scheduleTiny404Retry() {
-    if (_tiny404RetryTimer != null) return true; // 已有定时器在等待
-    if (_tiny404RetryCount >= _kTiny404MaxRetries) return false;
-    final delay = _kTiny404InitialDelay * (1 << _tiny404RetryCount);
-    _tiny404RetryTimer = Timer(delay, () {
-      _tiny404RetryTimer = null;
-      _tiny404RetryCount++;
+  /// Exponentially back off requests while the server is generating a thumbnail.
+  /// Returns false once the pending deadline is reached.
+  bool _scheduleTinyPendingRetry() {
+    if (_tinyPendingRetryTimer != null) {
+      return true; // A timer is already scheduled.
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _tinyPendingStartedAtMs ??= now;
+    if (now - _tinyPendingStartedAtMs! >= _kTinyPendingMaxWait.inMilliseconds) {
+      return false;
+    }
+    final multiplier = 1 << _tinyPendingRetryCount.clamp(0, 4).toInt();
+    final delay = Duration(
+      milliseconds: (_kTinyPendingInitialDelay.inMilliseconds * multiplier)
+          .clamp(0, _kTinyPendingMaxDelay.inMilliseconds)
+          .toInt(),
+    );
+    _tinyPendingRetryTimer = Timer(delay, () {
+      _tinyPendingRetryTimer = null;
+      _tinyPendingRetryCount++;
       // 重置 key 以强制重新发起请求
       _directUrlKey = '';
       _p2pKey = '';
@@ -797,13 +810,12 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
     return true;
   }
 
-  /// 判断错误是否为缩略图接口的 202/404（服务端正在异步生成中，可重试）
+  /// A 202 means the server accepted background generation; a 404 means the
+  /// file is missing and should show an error instead of being polled.
   bool _isTinyPendingError(String url, Object? error) {
     if (!_isTinyUrl(url)) return false;
     final s = error.toString();
-    return s.contains('direct_image_http_404') ||
-        s.contains('direct_image_http_202') ||
-        s.contains('p2p_image_http_404') ||
+    return s.contains('direct_image_http_202') ||
         s.contains('p2p_image_http_202');
   }
 
@@ -816,9 +828,9 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
 
   @override
   void dispose() {
-    // 取消缩略图 404 重试定时器（组件不可见时不再重试）
-    _tiny404RetryTimer?.cancel();
-    _tiny404RetryTimer = null;
+    // Stop polling when this thumbnail widget is no longer visible.
+    _tinyPendingRetryTimer?.cancel();
+    _tinyPendingRetryTimer = null;
     // 关闭 Web 直连的 Client，中止未完成的 HTTP 请求
     _webDirectClient?.close();
     _webDirectClient = null;
@@ -837,9 +849,10 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageUrl != widget.imageUrl) {
       // URL 变化时重置重试计数
-      _tiny404RetryCount = 0;
-      _tiny404RetryTimer?.cancel();
-      _tiny404RetryTimer = null;
+      _tinyPendingRetryCount = 0;
+      _tinyPendingStartedAtMs = null;
+      _tinyPendingRetryTimer?.cancel();
+      _tinyPendingRetryTimer = null;
     }
     if (oldWidget.imageUrl != widget.imageUrl ||
         oldWidget.width != widget.width ||
@@ -938,7 +951,7 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
           }
           if (snapshot.hasError) {
             if (_isTinyPendingError(url, snapshot.error)) {
-              if (_scheduleTiny404Retry()) {
+              if (_scheduleTinyPendingRetry()) {
                 if (!widget.showLoading) return const SizedBox.shrink();
                 return SizedBox(
                   width: widget.width,
@@ -1113,7 +1126,7 @@ class _CustomExtendedImageState extends State<CustomExtendedImage> {
           }
           if (snapshot.hasError) {
             if (_isTinyPendingError(url, snapshot.error)) {
-              if (_scheduleTiny404Retry()) {
+              if (_scheduleTinyPendingRetry()) {
                 if (!widget.showLoading) return const SizedBox.shrink();
                 return SizedBox(
                   width: widget.width,

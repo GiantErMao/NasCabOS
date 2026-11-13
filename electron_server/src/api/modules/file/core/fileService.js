@@ -7,6 +7,7 @@ const dbUtil = require('../../../../db/dbUtil');
 const knexUtil = require('../../../../db/knexUtil');
 const tableFileLog = require('../../../../db/table/tableFileLog');
 const { isSlowIoPathForTiny } = require('../../../../utils/slowIoPathUtil');
+const TINY_WORKER_STALE_PROCESSING_MS = 4 * 60 * 1000;
 
 class FileService {
   _buildListPayload(base, items) {
@@ -373,20 +374,35 @@ class FileService {
     await knex('file_favorite').where({ uid, path: p }).del();
   }
 
-  _deferTinyToWorker(resolvedPath) {
-    Promise.resolve()
-      .then(async () => {
-        try {
-          if (!knexUtil.hasConnection(dbUtil.DB_PATHS.PHOTO_DB)) {
-            await knexUtil.init(dbUtil.DB_PATHS.PHOTO_DB);
-          }
-          const knex = knexUtil.getInstance(dbUtil.DB_PATHS.PHOTO_DB);
-          await knex('wait_gen_tiny').insert({ source_path: resolvedPath }).onConflict('source_path').ignore();
-        } catch (_) {}
-      })
-      .catch(() => {});
+  async _deferTinyToWorker(resolvedPath) {
+    if (!knexUtil.hasConnection(dbUtil.DB_PATHS.PHOTO_DB)) {
+      await knexUtil.init(dbUtil.DB_PATHS.PHOTO_DB);
+    }
+    const knex = knexUtil.getInstance(dbUtil.DB_PATHS.PHOTO_DB);
+    const now = Date.now();
+    const retryAfterMs = 5 * 60 * 1000;
+    const queued = await knex('wait_gen_tiny').where({ source_path: resolvedPath }).first();
+    let shouldEnsureWorker = true;
+    if (queued?.status === 'failed') {
+      const updatedAt = Number(queued.updated_at || 0);
+      if (now - updatedAt < retryAfterMs) throw new Error('file.TINY_FAILED');
+      await knex('wait_gen_tiny').where({ id: queued.id }).update({
+        status: 'pending',
+        last_error: null,
+        updated_at: now,
+      });
+    } else if (queued?.status === 'processing') {
+      const updatedAt = Number(queued.updated_at || 0);
+      shouldEnsureWorker = now - updatedAt >= TINY_WORKER_STALE_PROCESSING_MS;
+    } else if (!queued) {
+      await knex('wait_gen_tiny').insert({
+        source_path: resolvedPath,
+        status: 'pending',
+        updated_at: now,
+      }).onConflict('source_path').ignore();
+    }
 
-    if (typeof process.send === 'function') {
+    if (shouldEnsureWorker && typeof process.send === 'function') {
       try {
         process.send({ type: 'ensureTinyImageWorker' });
       } catch (_) {}
@@ -410,7 +426,9 @@ class FileService {
       throw new Error('file.NOT_FILE');
     }
 
-    const hashStr = path.basename(resolvedPath) + stat.size + stat.mtimeMs;
+    // Include the normalized absolute path so same-named files in different
+    // directories cannot accidentally share a thumbnail cache entry.
+    const hashStr = `${resolvedPath}\0${stat.size}\0${stat.mtimeMs}`;
     const hash = crypto.createHash('sha256').update(hashStr).digest('hex');
 
     const cachePath = config.getTinyCachePath();
@@ -442,15 +460,29 @@ class FileService {
 
     const deferLargeVideo = typeof opts?.deferLargeVideo === 'boolean' ? opts.deferLargeVideo : true;
     if (deferLargeVideo && type === 'video' && Number(stat.size || 0) > 100 * 1024 * 1024) {
-      this._deferTinyToWorker(resolvedPath);
+      await this._deferTinyToWorker(resolvedPath);
     }
 
     const deferSlowIo = typeof opts?.deferSlowIo === 'boolean' ? opts.deferSlowIo : true;
     if (deferSlowIo && (await isSlowIoPathForTiny(resolvedPath))) {
-      this._deferTinyToWorker(resolvedPath);
+      await this._deferTinyToWorker(resolvedPath);
     }
 
-    await sharpUtils.genTinyFile(resolvedPath, cachePath, hash, type, size);
+    // If the same small/local file is requested by multiple visible cards at
+    // once, share one decode instead of launching duplicate image/FFmpeg jobs.
+    this._tinyGenerationPromises ||= new Map();
+    let generation = this._tinyGenerationPromises.get(targetTinyPath);
+    if (!generation) {
+      generation = sharpUtils.genTinyFile(resolvedPath, cachePath, hash, type, size);
+      this._tinyGenerationPromises.set(targetTinyPath, generation);
+    }
+    try {
+      await generation;
+    } finally {
+      if (this._tinyGenerationPromises.get(targetTinyPath) === generation) {
+        this._tinyGenerationPromises.delete(targetTinyPath);
+      }
+    }
 
     return targetTinyPath;
   }

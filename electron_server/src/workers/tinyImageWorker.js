@@ -13,6 +13,11 @@ const { withHardTimeout, pathAccessible } = require('../utils/asyncTimeoutUtil')
 const TINY_PATH_CHECK_MS = 8000;
 const TINY_IMAGE_GEN_MS = 90 * 1000;
 const TINY_VIDEO_GEN_MS = 3 * 60 * 1000;
+// Keep thumbnail extraction bounded so one slow video does not block a whole
+// folder, while avoiding an unbounded FFmpeg burst on NAS hardware.
+const TINY_WORKER_CONCURRENCY = 2;
+const TINY_JOB_SCAN_LIMIT = 100;
+const TINY_STALE_PROCESSING_MS = 4 * 60 * 1000;
 
 function tinyGenTimeoutMs(filePath) {
   const ext = path.extname(String(filePath || '')).toLowerCase();
@@ -43,6 +48,8 @@ class TinyImageWorker {
       this.photoKnex = knexUtil.getInstance(dbUtil.DB_PATHS.PHOTO_DB);
       this.videoKnex = knexUtil.getInstance(dbUtil.DB_PATHS.VIDEO_DB);
       this.isRunning = true;
+      this.activePaths = new Set();
+      this.activeJobs = new Set();
 
       // 来源目录缓存，5 秒刷新一次，避免频繁查库
       this._sourceDirsCache = { dirs: new Set(), fetchedAt: 0 };
@@ -107,45 +114,71 @@ class TinyImageWorker {
 
     while (this.isRunning) {
       try {
-        // 优先级: wait_gen_tiny > photo_index > video_index
-        const waitRow = await this.getOneWait();
-        if (waitRow) {
-          const ok = await this.processOneWait(waitRow);
-          processedCount++;
-          if (ok) updatedCount++; else failedCount++;
-          continue;
+        while (this.activeJobs.size < TINY_WORKER_CONCURRENCY) {
+          // Priority: explicit requests, then photo index, then video index.
+          const job = await this.getNextJob();
+          if (!job) break;
+          const key = this.getJobPath(job);
+          if (!key || this.activePaths.has(key)) continue;
+
+          // Claim synchronously before starting asynchronous work so parallel
+          // slots cannot pick the same path from different queues.
+          this.activePaths.add(key);
+          let task;
+          task = this.processJob(job)
+            .then(ok => {
+              processedCount++;
+              if (ok) updatedCount++; else failedCount++;
+            })
+            .catch(err => {
+              failedCount++;
+              Logger.error('❌ TinyImage Worker job failed:', err);
+            })
+            .finally(() => {
+              this.activePaths.delete(key);
+              this.activeJobs.delete(task);
+            });
+          this.activeJobs.add(task);
         }
 
-        const photoRow = await this.getOnePhoto();
-        if (photoRow) {
-          const ok = await this.processOnePhoto(photoRow);
-          processedCount++;
-          if (ok) updatedCount++; else failedCount++;
-          continue;
-        }
-
-        const videoRow = await this.getOneVideo();
-        if (videoRow) {
-          const ok = await this.processOneVideo(videoRow);
-          processedCount++;
-          if (ok) updatedCount++; else failedCount++;
-          continue;
-        }
-
-        // 全部处理完毕
-        break;
+        if (this.activeJobs.size === 0) break;
+        // Wake as soon as one slot is free, without polling while jobs run.
+        await Promise.race(this.activeJobs);
       } catch (err) {
         Logger.error('❌ TinyImage Worker loop error:', err);
         await new Promise(r => setTimeout(r, 1000));
       }
     }
 
+    if (this.activeJobs.size > 0) await Promise.allSettled(this.activeJobs);
     Logger.info(`✅ TinyImage Worker stopped: processed=${processedCount}, updated=${updatedCount}, failed=${failedCount}`);
     process.exit(0);
   }
 
+  getJobPath(job) {
+    if (!job) return '';
+    if (job.kind === 'wait') return path.resolve(String(job.row.source_path || ''));
+    return path.resolve(String(job.row.path || ''), String(job.row.filename || ''));
+  }
+
+  async getNextJob() {
+    const waitRow = await this.getOneWait();
+    if (waitRow) return { kind: 'wait', row: waitRow };
+    const photoRow = await this.getOnePhoto();
+    if (photoRow) return { kind: 'photo', row: photoRow };
+    const videoRow = await this.getOneVideo();
+    if (videoRow) return { kind: 'video', row: videoRow };
+    return null;
+  }
+
+  async processJob(job) {
+    if (job.kind === 'wait') return this.processOneWait(job.row);
+    if (job.kind === 'photo') return this.processOnePhoto(job.row);
+    return this.processOneVideo(job.row);
+  }
+
   async getOnePhoto() {
-    return this.photoKnex('photo_index')
+    const rows = await this.photoKnex('photo_index')
       .select('id', 'path', 'filename', 'type')
       .where({ is_file: 1, in_trash: 0 })
       .andWhere(qb => {
@@ -153,12 +186,13 @@ class TinyImageWorker {
       })
       .whereIn('type', [1, 2])
       .orderBy('id', 'asc')
-      .first()
-      .catch(() => null);
+      .limit(TINY_JOB_SCAN_LIMIT)
+      .catch(() => []);
+    return rows.find(row => !this.activePaths.has(path.resolve(String(row.path || ''), String(row.filename || '')))) || null;
   }
 
   async getOneVideo() {
-    return this.videoKnex('video_index')
+    const rows = await this.videoKnex('video_index')
       .select('id', 'path', 'filename', 'ext')
       .where({ is_file: 1 })
       .whereIn('ext', Array.isArray(config.videoTypeList) ? config.videoTypeList : [])
@@ -166,16 +200,24 @@ class TinyImageWorker {
         qb.where('gen_tiny', 0).orWhereNull('gen_tiny');
       })
       .orderBy('id', 'asc')
-      .first()
-      .catch(() => null);
+      .limit(TINY_JOB_SCAN_LIMIT)
+      .catch(() => []);
+    return rows.find(row => !this.activePaths.has(path.resolve(String(row.path || ''), String(row.filename || '')))) || null;
   }
 
   async getOneWait() {
-    return this.photoKnex('wait_gen_tiny')
+    const staleBefore = Date.now() - TINY_STALE_PROCESSING_MS;
+    const rows = await this.photoKnex('wait_gen_tiny')
       .select('id', 'source_path')
+      .where(builder => {
+        builder.where('status', 'pending').orWhere(inner => {
+          inner.where('status', 'processing').andWhere('updated_at', '<', staleBefore);
+        });
+      })
       .orderBy('id', 'desc')
-      .first()
-      .catch(() => null);
+      .limit(TINY_JOB_SCAN_LIMIT)
+      .catch(() => []);
+    return rows.find(row => !this.activePaths.has(path.resolve(String(row.source_path || '')))) || null;
   }
 
   async processOnePhoto(row) {
@@ -191,7 +233,10 @@ class TinyImageWorker {
       return false;
     }
 
-    if (!fullPath || !(await pathAccessible(fullPath, TINY_PATH_CHECK_MS))) return false;
+    if (!fullPath || !(await pathAccessible(fullPath, TINY_PATH_CHECK_MS))) {
+      await this.photoKnex('photo_index').where({ id }).update({ gen_tiny: 1 });
+      return false;
+    }
 
     try {
       const tinyPath = await generateTinyWithTimeout(fullPath);
@@ -223,7 +268,10 @@ class TinyImageWorker {
       return false;
     }
 
-    if (!fullPath || !(await pathAccessible(fullPath, TINY_PATH_CHECK_MS))) return false;
+    if (!fullPath || !(await pathAccessible(fullPath, TINY_PATH_CHECK_MS))) {
+      await this.videoKnex('video_index').where({ id }).update({ gen_tiny: 1 });
+      return false;
+    }
 
     try {
       const tinyPath = await generateTinyWithTimeout(fullPath);
@@ -248,16 +296,23 @@ class TinyImageWorker {
 
     const sourcePath = row && row.source_path ? String(row.source_path || '') : '';
     const fullPath = sourcePath ? path.resolve(sourcePath) : '';
+    await this.photoKnex('wait_gen_tiny').where({ id }).update({
+      status: 'processing',
+      last_error: null,
+      updated_at: Date.now(),
+    });
 
-    // 来源目录不存在则跳过并删除记录
-    await this._ensureSourceDirsFresh();
-    if (!this._isUnderSourceDir(fullPath)) {
-      await this.photoKnex('wait_gen_tiny').where({ id }).del();
-      return false;
-    }
+    const markFailed = async message => this.photoKnex('wait_gen_tiny').where({ id }).update({
+      status: 'failed',
+      last_error: String(message || 'Thumbnail generation failed').slice(0, 1000),
+      updated_at: Date.now(),
+    });
 
+    // Explicit /api/file/tiny requests are permission-checked by the route
+    // before enqueueing. They may target ordinary file-browser folders that
+    // are not configured as photo/video library sources.
     if (!fullPath || !(await pathAccessible(fullPath, TINY_PATH_CHECK_MS))) {
-      await this.photoKnex('wait_gen_tiny').where({ id }).del();
+      await markFailed('Source file is unavailable');
       return false;
     }
 
@@ -272,7 +327,7 @@ class TinyImageWorker {
       } else {
         Logger.error(`❌ pending thumbnail gen failed: ${fullPath}`, err);
       }
-      await this.photoKnex('wait_gen_tiny').where({ id }).del();
+      await markFailed(msg || 'Thumbnail generation failed');
       return false;
     }
   }

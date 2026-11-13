@@ -509,4 +509,22 @@ APK `1.2.7 (2059)` 已签名并通过 16 KiB 对齐检查，覆盖安装至 `e6f
 
 核对远端 `ermao@ddns.ermao.fun:13122` 的手动翻译相关八个服务端文件，均已与提交 `e99afc5d7` 一致，未重复覆盖或重启服务。翻译接口认证保护、远端语法及中文跳过样例检查通过，30 项服务端回归测试通过；当前代码已补做自定义镜像和归档备份。Android regular arm64 APK `1.2.7 (2068)` 已成功覆盖安装至 `e6fc7cb7`，手机和桌面源码中的翻译入口已移至“…”菜单。没有发布 Web、Harmony 或 TV 客户端，没有触发实际翻译或刮削。
 
+## 文件浏览视频缩略图优化部署（2026-11-12）
+
+已向远端 `ermao@ddns.ermao.fun:13122` 的 `nascabos` 容器部署服务端缩略图队列优化和 Flutter Web 更新。服务端只更新 `fileService.js`、`tableWaitGenTiny.js`、`tinyImageWorker.js` 三个定向文件；旧文件及完整旧 Web 目录备份在 `/nascabos_data/backups/nascabos-thumb-optimization-20261112-01/`。Web 部署包先解压到暂存目录，再替换 `/nascabos/web/main`。容器已重启。
+
+- 后台缩略图 Worker、队列失败状态迁移及 Web 资源的 SHA-256 与本地一致；远端 3 个 Node 文件 `node --check` 通过。重启日志确认创建数据库 schema，`wait_gen_tiny` 已包含 `status`、`last_error`、`updated_at` 列。
+- 公网首页和 `/health` 均返回 HTTP 200。Web `main.dart.js` SHA-256：`4626c0038df08f40eed9216cd7f3907ad8a45677297fdd655f2181cdc0f97681`。Flutter Web Release 构建成功，输出有既有依赖的 Wasm dry-run 兼容性提示。
+- 已生成 Docker 镜像 `nascabos-custom:tiny-thumbnails-20261112` 并更新 `nascabos-custom:latest`，镜像 ID：`sha256:05b35e68420f7069a2322473ab2efbf3ad4793d4c2e6c7b1d816a77ec871d012`。约 2.2 GiB 的容器可写层增量使远端文件系统剩余空间不足，完整 Docker 镜像归档未能完成；失败的临时归档已清理。旧镜像归档未删除。容器内新镜像标签可用于后续重建，但目前没有对应的可移动归档。
+- 本次未构建或安装 Android APK，也未执行真实媒体目录的缩略图生成验收。
+
 文件清单、镜像、APK 哈希和验证详情见 [手动 NFO 翻译菜单发布记录](MANUAL_NFO_TRANSLATION_MENU_RELEASE_20261026.md)。
+
+## 文件浏览器视频缩略图来源目录限制修复（2026-11-12）
+
+用户反馈仍有部分视频无缩略图后，检查远端 `wait_gen_tiny` 队列，发现 155 条任务均因 `Source directory is no longer configured` 失败，且这些文件都不在已配置的照片/视频来源目录中。根因是普通文件浏览器发起的显式缩略图请求被误套用了媒体库来源目录限制。
+
+- 更新 `tinyImageWorker.js`：显式 `/api/file/tiny` 请求经路由权限校验后，允许处理普通文件浏览器目录中的文件；索引 Worker 仍保留原有来源目录校验。服务端文件哈希：`359b3ada2c8b42429fd837a1ac0ccab5bf7e1d23d37e0f8ea4843094882bc8ba`。
+- 旧文件备份：容器 `/nascabos_data/backups/nascabos-tiny-browser-fix-20261112-140659/tinyImageWorker.js`。重排全部 155 条误失败任务后，Worker 记录 `processed=155, updated=155, failed=0`，队列清空；`/health` 返回 HTTP 200。
+- 已提交容器镜像 `nascabos-custom:tiny-thumbnails-browser-fix-20261112`，并更新 `nascabos-custom:latest` 至 `sha256:c2a975b6e4ea07a4e2399abd41ad96260739643a90603caaa3bfbcfa4a45e2f6`。保留 `nascabos-custom:tiny-thumbnails-20261112`（`sha256:05b35e68420f7069a2322473ab2efbf3ad4793d4c2e6c7b1d816a77ec871d012`）作为回滚版本。
+- 仅变更服务端，不需要重建 Android APK。Web 页面若仍显示旧错误占位图，刷新文件浏览页面即可重新请求已生成的缩略图。
